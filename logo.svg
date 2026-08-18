@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="dovetail-logo-title">
+  <title id="dovetail-logo-title">Dovetail</title>
+  <path d="M12,50 L28,50 L20,26 L48,26 L40,50 L60,50 L52,74 L80,74 L72,50 L88,50" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="50" r="5.5" fill="currentColor"/>
+  <circle cx="28" cy="50" r="5.5" fill="currentColor"/>
+  <circle cx="20" cy="26" r="5.5" fill="currentColor"/>
+  <circle cx="48" cy="26" r="5.5" fill="currentColor"/>
+  <circle cx="40" cy="50" r="5.5" fill="currentColor"/>
+  <circle cx="60" cy="50" r="5.5" fill="currentColor"/>
+  <circle cx="52" cy="74" r="5.5" fill="currentColor"/>
+  <circle cx="80" cy="74" r="5.5" fill="currentColor"/>
+  <circle cx="72" cy="50" r="5.5" fill="currentColor"/>
+  <circle cx="88" cy="50" r="5.5" fill="currentColor"/>
+</svg>
