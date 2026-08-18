@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Dovetail.Tests/Dovetail.Tests.csproj" />
+  <Project Path="Dovetail/Dovetail.csproj" />
+</Solution>
