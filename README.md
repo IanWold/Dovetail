@@ -1,9 +1,15 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="logo-light.svg">
+  <img alt="Dovetail" src="logo-light.svg" width="96">
+</picture>
+
 # Dovetail
 
-<a href="https://www.nuget.org/packages/PostgreSignalR"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/postgresignalr?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
-<a href="https://github.com/IanWold/PostgreSignalR/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22"><img alt="GitHub Issues or Pull Requests by label" src="https://img.shields.io/github/issues/ianwold/postgresignalr/good%20first%20issue?style=for-the-badge&label=Good%20First%20Issues"></a>
+<a href="https://www.nuget.org/packages/Dovetail"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/PostgreSignalR?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
+
 
 A source generator for implementing asynchronous pipelines of any complexity
 
