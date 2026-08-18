@@ -1,12 +1,14 @@
 <div align="center">
 
+<h1>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="logo-light.svg">
-  <img alt="Dovetail" src="logo-light.svg" width="96">
+  <img alt="Dovetail" src="logo-light.svg" height="64">
 </picture>
 
-# Dovetail
+Dovetail
+</h1>
 
 <a href="https://www.nuget.org/packages/Dovetail"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/PostgreSignalR?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
 
