@@ -29,12 +29,6 @@ Dovetail is a Roslyn source generator for building async pipelines out of small,
 
 **Real parallelism, not just async.** Segments that don't depend on each other run concurrently automatically — you never hand-write `Task.WhenAll` or accidentally serialize independent work by awaiting too early. Segments that do depend on something simply await the task that produces it, and the generated code takes care of the rest.
 
-## Install
-
-```bash
-dotnet add package Dovetail
-```
-
 ## Quick start
 
 A segment is any class implementing `IPipelineSegment<TResult>` (or the multi-input generic variants, up to eight inputs). Its inputs and result are ordinary types — no interfaces or base classes required on them.
@@ -154,17 +148,3 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | DOVE006 | A segment's input isn't produced by any other segment or the pipeline's own input. |
 | DOVE007 | The segments form a dependency cycle. |
 | DOVE008 | A segment's result is never used, directly or transitively, by the segment producing the pipeline's result. |
-
-## Requirements
-
-- The package targets `netstandard2.0`, so it can be referenced from almost any .NET project.
-- The pipeline declaration syntax above (primary constructors, semicolon-bodied classes) needs C# 12 or later — set `<LangVersion>` accordingly if your project targets an older one.
-
-## Project layout
-
-- **Dovetail** — the public API (`IPipeline`, `IPipelineSegment`, `SegmentAttribute`) and the source generator, shipped in a single package.
-- **Dovetail.Tests** — xUnit v3 tests, including end-to-end tests that compile generated pipelines and run them.
-
-## Status
-
-Dovetail is early. The generator and its diagnostics are covered by tests, but the API may still change before a 1.0 release.
