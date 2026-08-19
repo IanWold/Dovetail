@@ -22,7 +22,7 @@ public interface IPipelineSegment<TResult> : IPipelineSegment
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(CancellationToken token);
+    Task<TResult> ExecuteAsync(CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes one input and produces
@@ -43,7 +43,7 @@ public interface IPipelineSegment<T1, TResult> : IPipelineSegment
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes two inputs and produces
@@ -68,7 +68,7 @@ public interface IPipelineSegment<T1, T2, TResult> : IPipelineSegment
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, T2 arg2, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, T2 arg2, CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes three inputs and produces
@@ -97,7 +97,7 @@ public interface IPipelineSegment<T1, T2, T3, TResult> : IPipelineSegment
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, T2 arg2, T3 arg3, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, T2 arg2, T3 arg3, CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes four inputs and produces
@@ -130,7 +130,7 @@ public interface IPipelineSegment<T1, T2, T3, T4, TResult> : IPipelineSegment
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes five inputs and produces
@@ -167,7 +167,7 @@ public interface IPipelineSegment<T1, T2, T3, T4, T5, TResult> : IPipelineSegmen
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes six inputs and produces
@@ -208,7 +208,7 @@ public interface IPipelineSegment<T1, T2, T3, T4, T5, T6, TResult> : IPipelineSe
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes seven inputs and produces
@@ -253,7 +253,7 @@ public interface IPipelineSegment<T1, T2, T3, T4, T5, T6, T7, TResult> : IPipeli
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, CancellationToken token);
 }
 /// <summary>
 /// A pipeline segment that consumes eight inputs and produces
@@ -302,5 +302,5 @@ public interface IPipelineSegment<T1, T2, T3, T4, T5, T6, T7, T8, TResult> : IPi
     /// <param name="token">Cancelled when the pipeline is cancelled or when
     /// another segment in the same execution faults.</param>
     /// <returns>The result this segment contributes to the pipeline.</returns>
-    Task<TResult> RunAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8, CancellationToken token);
+    Task<TResult> ExecuteAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8, CancellationToken token);
 }

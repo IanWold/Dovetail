@@ -345,7 +345,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             args.Add("linkedToken");
 
             builder.AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async() =>")
-                .AppendLine($"            await {segment.ParameterName}.RunAsync({string.Join(", ", args)}).ConfigureAwait(false);")
+                .AppendLine($"            await {segment.ParameterName}.ExecuteAsync({string.Join(", ", args)}).ConfigureAwait(false);")
                 .AppendLine();
         }
 

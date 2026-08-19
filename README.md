@@ -32,25 +32,25 @@ A segment is any class implementing `IPipelineSegment<TResult>` (or the multi-in
 ```csharp
 public class ItemInfoSegment(IDataRepo repo) : IPipelineSegment<int, ItemInfo>
 {
-    public Task<ItemInfo> RunAsync(int itemId, CancellationToken ct) =>
+    public Task<ItemInfo> ExecuteAsync(int itemId, CancellationToken ct) =>
         repo.GetInfoAsync(itemId, ct);
 }
 
 public class ItemPriceSegment(IPriceService prices) : IPipelineSegment<ItemInfo, ItemPrice>
 {
-    public Task<ItemPrice> RunAsync(ItemInfo info, CancellationToken ct) =>
+    public Task<ItemPrice> ExecuteAsync(ItemInfo info, CancellationToken ct) =>
         prices.GetCurrentPriceAsync(info.Sku, ct);
 }
 
 public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, ItemImages>
 {
-    public Task<ItemImages> RunAsync(ItemInfo info, CancellationToken ct) =>
+    public Task<ItemImages> ExecuteAsync(ItemInfo info, CancellationToken ct) =>
         cms.GetImagesAsync(info.Slug, ct);
 }
 
 public class ItemAssembler : IPipelineSegment<ItemInfo, ItemPrice, ItemImages, ItemModel>
 {
-    public Task<ItemModel> RunAsync(ItemInfo info, ItemPrice price, ItemImages images, CancellationToken ct) =>
+    public Task<ItemModel> ExecuteAsync(ItemInfo info, ItemPrice price, ItemImages images, CancellationToken ct) =>
         Task.FromResult(new ItemModel(info, price, images));
 }
 ```
@@ -130,16 +130,16 @@ public partial class ItemPipeline
         }
 
         async Task<ItemInfo> InfoAsync() =>
-            await info.RunAsync(input, linkedToken).ConfigureAwait(false);
+            await info.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
 
         async Task<ItemPrice> PriceAsync() =>
-            await price.RunAsync(await infoTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
+            await price.ExecuteAsync(await infoTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
 
         async Task<ItemImages> ImagesAsync() =>
-            await images.RunAsync(await infoTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
+            await images.ExecuteAsync(await infoTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
 
         async Task<ItemModel> AssemblerAsync() =>
-            await assembler.RunAsync(
+            await assembler.ExecuteAsync(
                 await infoTask.ConfigureAwait(false),
                 await priceTask.ConfigureAwait(false),
                 await imagesTask.ConfigureAwait(false),
@@ -150,7 +150,22 @@ public partial class ItemPipeline
 
 (Simplified for readability — the generator fully qualifies every type it emits.)
 
-## Testing segments
+### Chaining pipelines
+
+`IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (0 or 1 input). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
+
+```csharp
+public partial class ItemInfoPipeline(
+    [Segment] SomeSegment a,
+    [Segment] AnotherSegment b
+) : IPipeline<int, ItemInfo>, IPipelineSegment<int, ItemInfo>;
+```
+
+Since both interfaces declare an identical `Task<ItemInfo> ExecuteAsync(int, CancellationToken)`, the one `ExecuteAsync` Dovetail already generates for `IPipeline<int, ItemInfo>` satisfies `IPipelineSegment<int, ItemInfo>` too, so there's nothing extra for you to write. `ItemInfoPipeline` can now be called directly, or used as `[Segment] ItemInfoPipeline info` inside a larger pipeline, and either way it's the same generated method doing the work.
+
+This only applies when the shapes match. A type that implements `IPipelineSegment<...>` without a matching `IPipeline<...>` — the ordinary case still needs its `ExecuteAsync` hand-written, exactly like any other segment.
+
+### Testing segments
 
 Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
 
@@ -158,11 +173,11 @@ Segments are plain classes with constructor-injected dependencies so you can tes
 public class ItemPriceSegmentTests
 {
     [Fact]
-    public async Task RunAsync_ReturnsCurrentPrice()
+    public async Task ExecuteAsync_ReturnsCurrentPrice()
     {
         var segment = new ItemPriceSegment(new FakePriceService(19.99m));
 
-        var result = await segment.RunAsync(new ItemInfo { Sku = "SKU-1" }, CancellationToken.None);
+        var result = await segment.ExecuteAsync(new ItemInfo { Sku = "SKU-1" }, CancellationToken.None);
 
         Assert.Equal(19.99m, result.Amount);
     }
