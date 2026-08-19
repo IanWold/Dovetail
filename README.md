@@ -207,6 +207,37 @@ public class ItemPriceSegmentTests
 
 `ExecuteAsync` itself isn't something you typically need to unit test — Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
 
+## Architectural Considerations
+
+### Error Handling
+
+Segments are not sandboxed within a pipeline, so an exception from one segment fails the entire pipeline. It was deliberately chosen that Dovetail has no concept of an "optional" segment. If a segment should degrade gracefully instead of failing the whole pipeline, catch its own failure and return a fallback value:
+
+```csharp
+public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, ItemImages>
+{
+    public async Task<ItemImages> ExecuteAsync(ItemInfo info, CancellationToken ct)
+    {
+        try
+        {
+            return await cms.GetImagesAsync(info.Slug, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ItemImages([]);
+        }
+    }
+}
+```
+
+One thing worth being careful about: don't catch `OperationCanceledException` this way. If the pipeline is actually being cancelled, that should propagate normally rather than being swallowed into a fallback value.
+
+### Concurrent Failures
+
+When two or more segments fail at the same time, only **one** exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from multiple segments. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
+
+In practice: if two unrelated segments both throw at once, you'll see whichever one happened to be part of the chain the terminal segment was awaiting when it faulted, not both. If you need visibility into every failure rather than just the one that propagates, [tracing](#tracing) marks *every* failing segment's own activity `Error`, regardless of which single exception makes it back to the caller.
+
 ## Diagnostics
 
 Dovetail validates the segment graph at compile time and reports one of the following instead of generating broken code:

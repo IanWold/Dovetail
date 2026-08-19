@@ -12,6 +12,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 {
     private const string SegmentAttributeFullName = "Dovetail.SegmentAttribute";
     private const string ActivitySourceMetadataName = "System.Diagnostics.ActivitySource";
+    internal const string SegmentParametersTrackingName = "SegmentParameters";
     private const string InputSeparator = "";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -24,7 +25,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             )
             .Where(static parameter => parameter is not null)
             .Select(static (parameter, _) => parameter!.Value)
-            .Collect();
+            .Collect()
+            .WithTrackingName(SegmentParametersTrackingName);
 
         var hasActivitySource = context.CompilationProvider.Select(static (compilation, _) => compilation.GetTypeByMetadataName(ActivitySourceMetadataName) is not null);
 

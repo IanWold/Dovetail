@@ -10,6 +10,8 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
 {
     private const string ServiceCollectionMetadataName = "Microsoft.Extensions.DependencyInjection.IServiceCollection";
 
+    internal const string RegisteredTypesTrackingName = "RegisteredTypes";
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var candidates = context.SyntaxProvider
@@ -18,7 +20,8 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
                 transform: static (ctx, _) => GetCandidate(ctx))
             .Where(static candidate => candidate is not null)
             .Select(static (candidate, _) => candidate!.Value)
-            .Collect();
+            .Collect()
+            .WithTrackingName(RegisteredTypesTrackingName);
 
         var hasServiceCollection = context.CompilationProvider
             .Select(static (compilation, _) => compilation.GetTypeByMetadataName(ServiceCollectionMetadataName) is not null);
