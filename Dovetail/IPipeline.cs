@@ -7,10 +7,11 @@ namespace Dovetail;
 public interface IPipeline<TResult>
 {
     /// <summary>
-    /// 
+    /// Runs every segment in the pipeline, in parallel where their dependencies allow, and returns the result
+    /// of the segment that produces <typeparamref name="TResult"/>.
     /// </summary>
     /// <param name="token">Cancelled when the pipeline is cancelled or fails.</param>
-    /// <returns></returns>
+    /// <returns>The result produced by the pipeline's terminal segment.</returns>
     Task<TResult> ExecuteAsync(CancellationToken token);
 }
 
@@ -22,10 +23,11 @@ public interface IPipeline<TResult>
 public interface IPipeline<TInput, TResult>
 {
     /// <summary>
-    /// 
+    /// Runs every segment in the pipeline, in parallel where their dependencies allow, and returns the result
+    /// of the segment that produces <typeparamref name="TResult"/>.
     /// </summary>
     /// <param name="input">The input for the pipeline.</param>
     /// <param name="token">Cancelled when the pipeline is cancelled or fails.</param>
-    /// <returns></returns>
+    /// <returns>The result produced by the pipeline's terminal segment.</returns>
     Task<TResult> ExecuteAsync(TInput input, CancellationToken token);
 }

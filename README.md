@@ -73,6 +73,26 @@ var pipeline = new ItemPipeline(infoSegment, priceSegment, imagesSegment, assemb
 ItemModel model = await pipeline.ExecuteAsync(itemId, cancellationToken);
 ```
 
+## Dependency injection
+
+If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
+
+```csharp
+services.AddPipelines();
+```
+
+This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
+
+```csharp
+public class ItemsController(ItemPipeline pipeline)
+{
+    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
+        pipeline.ExecuteAsync(itemId, ct);
+}
+```
+
+`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
+
 ## How it works
 
 Dovetail reads each segment's `IPipelineSegment<...>` interface to learn its input and result types, then wires the pipeline together purely by matching those types:
@@ -129,6 +149,33 @@ public partial class ItemPipeline
 ```
 
 (Simplified for readability — the generator fully qualifies every type it emits.)
+
+## Testing segments
+
+Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
+
+```csharp
+public class ItemPriceSegmentTests
+{
+    [Fact]
+    public async Task RunAsync_ReturnsCurrentPrice()
+    {
+        var segment = new ItemPriceSegment(new FakePriceService(19.99m));
+
+        var result = await segment.RunAsync(new ItemInfo { Sku = "SKU-1" }, CancellationToken.None);
+
+        Assert.Equal(19.99m, result.Amount);
+    }
+
+    private class FakePriceService(decimal price) : IPriceService
+    {
+        public Task<Price> GetCurrentPriceAsync(string sku, CancellationToken ct) =>
+            Task.FromResult(new Price(price));
+    }
+}
+```
+
+`ExecuteAsync` itself isn't something you typically need to unit test — Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
 
 ## Diagnostics
 
