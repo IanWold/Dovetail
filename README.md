@@ -41,7 +41,7 @@ In addition, Dovetail works quite well for:
 
 ### Who Dovetail Is Not For
 
-Most notably, Dovetail is for managing the complexity of aggregation logic that needs to be spread across many services. It's overkill if you have very simple use cases.
+Most notably, Dovetail is for managing the complexity of aggregation logic that needs to be spread across many services. It's overkill if you have very simple use cases. That said, there are other properly complex use cases Dovetail isn't suited for:
 
 * **Dynamic or conditional graph shapes:** The DAG is resolved entirely by compile-time type matching. There's no "run this segment only if that one says so," no step list that varies by tenant, feature flag, or runtime config. If your workflow needs conditional branching, this isn't the tool.
 * **Long-running or durable workflows:** Dovetail has no persistence, no checkpointing, and no resuming after a crash. Dovetail is an in-process, single-execution composition helper, not a durable orchestrator.
