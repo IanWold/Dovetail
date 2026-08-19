@@ -9,7 +9,9 @@ Dovetail
 <a href="https://www.nuget.org/packages/Dovetail"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/Dovetail?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
 
 
-A source generator for implementing asynchronous pipelines of any complexity
+A source generator for implementing asynchronous pipelines of any complexity.
+
+[Quickstart](#quickstart) • [Detailed Explanation](#detailed-explanation) • [Diagnostics](#detailed-explanation)
 
 </div>
 
@@ -19,11 +21,33 @@ Dovetail is a Roslyn source generator for building async pipelines out of small,
 
 ## Why Dovetail?
 
-**Fully type-safe.** There's no string-keyed registration, no reflection-based service location, no runtime graph to misconfigure. A segment's dependencies are just its `IPipelineSegment<...>` type parameters — if nothing produces the type it needs, or two segments produce the same type, that's a compile error, not a bug you find in production.
+**Compile-time correctness, helpful diagnostics:** Every dependency within the pipeline is checked when your project builds, not when a request hits production. A missing dependency, two segments producing the same type, a cycle: these are compile errors with a specific, located diagnostic, not bugs you find at 2 AM. There's no string-keyed registration, no reflection-based service location, no runtime graph to misconfigure. The type system is the only source of truth.
 
-**Helpful diagnostics.** Dovetail validates the whole segment graph at compile time: missing terminal segments, ambiguous or unresolved dependencies, cycles, segments that don't feed the result. Every failure mode has a specific diagnostic that points at the problem, right in your editor.
+**Real parallelism, no boilerplate:** Segments that don't depend on each other run concurrently automatically; you never hand-write `Task.WhenAll` and you never accidentally serialize independent work by awaiting too early. Cancellation propagation and draining in-flight work when something fails are the kind of thing that's easy to get subtly wrong by hand.
 
-**Real parallelism, not just async.** Segments that don't depend on each other run concurrently automatically — you never hand-write `Task.WhenAll` or accidentally serialize independent work by awaiting too early. Segments that do depend on something simply await the task that produces it, and the generated code takes care of the rest.
+**Generated code you can actually read:** `ExecuteAsync` is plain async/await — nothing you couldn't have written yourself, just correctly and without the tedium. No runtime reflection, no DI container in the hot path, nothing hidden behind the generator once your project is built.
+
+**Lightweight and quick to set up:** One NuGet package, no forced dependencies, no base classes to inherit, no configuration files, no startup registration required. A segment is a class implementing one interface; a pipeline is a partial class with a few `[Segment]` attributes — there's nothing else standing between `dotnet add package` and a working pipeline.
+
+### Who Dovetail Is For
+
+Dovetail is designed particularly for composition and aggregation workflows: fanning out to several independent services or data sources and merging the results into one response. BFF-style endpoints, product-detail-page assembly, dashboard and summary views, GraphQL-style resolvers implemented over REST. Dovetail is best used for managing complexity in this domain.
+
+In addition, Dovetail works quite well for:
+
+* **Read-side composition in CQRS-style architectures:** Query handlers that fan out to multiple read models or caches and assemble a view model.
+* **Fixed-shape async initialization sequences:** A small, static DAG of async setup steps where some branches are genuinely independent of each other.
+* **Teams splitting ownership across a composed endpoint:** Segments are plain, DI-constructible classes with no shared orchestration code, so different people can own different segments without touching how they're wired together.
+
+### Who Dovetail Is Not For
+
+Most notably, Dovetail is for managing the complexity of aggregation logic that needs to be spread across many services. It's overkill if you have very simple use cases.
+
+* **Dynamic or conditional graph shapes:** The DAG is resolved entirely by compile-time type matching. There's no "run this segment only if that one says so," no step list that varies by tenant, feature flag, or runtime config. If your workflow needs conditional branching, this isn't the tool.
+* **Long-running or durable workflows:** Dovetail has no persistence, no checkpointing, and no resuming after a crash. Dovetail is an in-process, single-execution composition helper, not a durable orchestrator.
+* **Heavy CPU-bound work:** The concurrency model overlaps I/O waits and doesn't spread compute across cores. If your "segments" are actually CPU-heavy, this won't help beyond what `async`/`await` already gives you.
+* **Workflows that need multi-error aggregation as a first-class concern:** Only one exception surfaces per execution (see [Concurrent Failures](#concurrent-failures)). Dovetail does support working around this by returning errors as results from segments, but it is the wrong default if your domain fundamentally wants "tell me everything that failed."
+* **Streaming or incremental results:** One execution produces one final result; Dovetail does not support `IAsyncEnumerable`, nor progressive rendering as branches complete.
 
 ## Quickstart
 
