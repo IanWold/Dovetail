@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dovetail.Tests;
 
@@ -99,7 +100,7 @@ public class PipelineSourceGeneratorTests
             ) : IPipeline<int, string>;
             """;
 
-        var assembly = CompileAndLoad(source);
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
         var pipelineType = assembly.GetType("Sample.NumberPipeline")!;
         var doubler = Activator.CreateInstance(assembly.GetType("Sample.DoubleSegment")!)!;
         var stringifier = Activator.CreateInstance(assembly.GetType("Sample.ToStringSegment")!)!;
@@ -141,7 +142,7 @@ public class PipelineSourceGeneratorTests
             ) : IPipeline<int, string>;
             """;
 
-        var assembly = CompileAndLoad(source);
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
         var pipelineType = assembly.GetType("Sample.NumberPipeline")!;
         var doubler = Activator.CreateInstance(assembly.GetType("Sample.DoubleSegment")!)!;
         var stringifier = Activator.CreateInstance(assembly.GetType("Sample.ToStringSegment")!)!;
@@ -152,6 +153,107 @@ public class PipelineSourceGeneratorTests
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => task);
         Assert.Equal("boom", exception.Message);
+    }
+
+    [Fact]
+    public void EmitsAddPipelines_RegisteringEverySegmentAndPipeline()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, int>
+            {
+                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+            }
+
+            public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, int>;
+            """;
+
+        var result = RunServiceCollectionGenerator(source);
+
+        var generated = Assert.Single(result.GeneratedTrees);
+        var text = generated.GetText(TestContext.Current.CancellationToken).ToString();
+
+        Assert.Contains("namespace Microsoft.Extensions.DependencyInjection;", text);
+        Assert.Contains("public static IServiceCollection AddPipelines(this IServiceCollection services)", text);
+        Assert.Contains("services.AddTransient<global::Sample.FooSegment>();", text);
+        Assert.Contains("services.AddTransient<global::Sample.FooPipeline>();", text);
+    }
+
+    [Fact]
+    public void DoesNotEmitAddPipelines_WhenServiceCollectionIsUnavailable()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, int>
+            {
+                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+            }
+
+            public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, int>;
+            """;
+
+        var result = RunServiceCollectionGenerator(source, includeServiceCollection: false);
+
+        Assert.Empty(result.GeneratedTrees);
+    }
+
+    [Fact]
+    public async Task AddPipelines_RegistersAndResolvesAWorkingPipeline()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct Doubled(int Value);
+
+            public class DoubleSegment : IPipelineSegment<int, Doubled>
+            {
+                public Task<Doubled> RunAsync(int value, CancellationToken ct) => Task.FromResult(new Doubled(value * 2));
+            }
+
+            public class ToStringSegment : IPipelineSegment<Doubled, string>
+            {
+                public Task<string> RunAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
+            }
+
+            public partial class NumberPipeline(
+                [Segment] DoubleSegment doubler,
+                [Segment] ToStringSegment stringifier
+            ) : IPipeline<int, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator(), new ServiceCollectionExtensionsGenerator());
+
+        var services = new ServiceCollection();
+        var extensionsType = assembly.GetType("Microsoft.Extensions.DependencyInjection.DovetailServiceCollectionExtensions")!;
+
+        extensionsType.GetMethod("AddPipelines")!.Invoke(null, [services]);
+
+        var provider = services.BuildServiceProvider();
+        var pipelineType = assembly.GetType("Sample.NumberPipeline")!;
+        var pipeline = provider.GetRequiredService(pipelineType);
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(pipeline, [21, CancellationToken.None])!;
+        var result = await task;
+
+        Assert.Equal("42", result);
     }
 
     [Fact]
@@ -363,10 +465,16 @@ public class PipelineSourceGeneratorTests
         return driver.RunGenerators(CreateCompilation(source)).GetRunResult();
     }
 
-    private static Assembly CompileAndLoad(string source)
+    private static GeneratorDriverRunResult RunServiceCollectionGenerator(string source, bool includeServiceCollection = true)
+    {
+        var driver = CSharpGeneratorDriver.Create(new ServiceCollectionExtensionsGenerator());
+        return driver.RunGenerators(CreateCompilation(source, includeServiceCollection)).GetRunResult();
+    }
+
+    private static Assembly CompileAndLoad(string source, params IIncrementalGenerator[] generators)
     {
         var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new PipelineSourceGenerator());
+        var driver = CSharpGeneratorDriver.Create(generators);
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
 
         Assert.Empty(diagnostics);
@@ -378,12 +486,16 @@ public class PipelineSourceGeneratorTests
         return Assembly.Load(stream.ToArray());
     }
 
-    private static CSharpCompilation CreateCompilation(string source) =>
+    private static CSharpCompilation CreateCompilation(string source, bool includeServiceCollection = true) =>
         CSharpCompilation.Create(
             assemblyName: $"Dovetail.Tests.Generated.{Guid.NewGuid():N}",
             syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
             references: AppDomain.CurrentDomain.GetAssemblies()
-                .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
+                .Where(assembly =>
+                    !assembly.IsDynamic
+                    && !string.IsNullOrEmpty(assembly.Location)
+                    && (includeServiceCollection || !(assembly.GetName().Name ?? "").StartsWith("Microsoft.Extensions.DependencyInjection", StringComparison.Ordinal))
+                )
                 .Select(assembly => MetadataReference.CreateFromFile(assembly.Location)
             ),
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
