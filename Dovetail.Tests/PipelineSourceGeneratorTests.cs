@@ -457,6 +457,8 @@ public class PipelineSourceGeneratorTests
         Assert.Empty(result.GeneratedTrees);
         var diagnostic = Assert.Single(result.Diagnostics);
         Assert.Equal(expectedId, diagnostic.Id);
+        Assert.NotEqual(Location.None, diagnostic.Location);
+        Assert.True(diagnostic.Location.IsInSource);
     }
 
     private static GeneratorDriverRunResult RunGenerator(string source)

@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+
 namespace Dovetail;
 
 internal readonly record struct SegmentParameterInfo(
@@ -6,5 +8,7 @@ internal readonly record struct SegmentParameterInfo(
     string? PipelineResultTypeName,
     string ParameterName,
     string? SegmentInputTypeNamesJoined,
-    string? SegmentResultTypeName
+    string? SegmentResultTypeName,
+    Location? ParameterLocation,
+    Location? ContainingTypeLocation
 );
