@@ -7,6 +7,12 @@ internal static class PipelineShapeResolver
 {
     internal static readonly SymbolDisplayFormat TypeNameFormat = SymbolDisplayFormat.FullyQualifiedFormat;
 
+    internal static readonly SymbolDisplayFormat DisplayNameFormat = new(
+        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters
+    );
+
     internal static bool TryGetPipelineShape(INamedTypeSymbol pipelineType, out string? inputTypeName, out string? resultTypeName)
     {
         inputTypeName = null;

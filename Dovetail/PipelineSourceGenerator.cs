@@ -11,6 +11,7 @@ namespace Dovetail;
 internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 {
     private const string SegmentAttributeFullName = "Dovetail.SegmentAttribute";
+    private const string ActivitySourceMetadataName = "System.Diagnostics.ActivitySource";
     private const string InputSeparator = "";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -25,11 +26,25 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             .Select(static (parameter, _) => parameter!.Value)
             .Collect();
 
-        context.RegisterSourceOutput(segmentParameters, static (spc, parameters) =>
+        var hasActivitySource = context.CompilationProvider.Select(static (compilation, _) => compilation.GetTypeByMetadataName(ActivitySourceMetadataName) is not null);
+
+        context.RegisterSourceOutput(segmentParameters.Combine(hasActivitySource), static (spc, data) =>
         {
-            foreach (var group in parameters.GroupBy(static parameter => parameter.ContainingType))
+            var (parameters, hasActivitySource) = data;
+            var groups = parameters.GroupBy(static parameter => parameter.ContainingType).ToImmutableArray();
+            var generatedAnyPipeline = false;
+
+            foreach (var group in groups)
             {
-                Execute(group.Key, group.ToImmutableArray(), spc);
+                if (Execute(group.Key, group.ToImmutableArray(), spc, hasActivitySource))
+                {
+                    generatedAnyPipeline = true;
+                }
+            }
+
+            if (hasActivitySource && generatedAnyPipeline)
+            {
+                spc.AddSource("DovetailActivitySource.g.cs", GenerateActivitySource());
             }
         });
     }
@@ -55,6 +70,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         PipelineShapeResolver.TryGetPipelineShape(containingType, out var pipelineInputTypeName, out var pipelineResultTypeName);
 
+        string? segmentTypeName = null;
         string? segmentInputsJoined = null;
         string? segmentResultTypeName = null;
 
@@ -62,6 +78,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             && PipelineShapeResolver.TryGetSegmentShape(segmentType, out var segmentInputTypeNames, out var resolvedResultTypeName)
         )
         {
+            segmentTypeName = segmentType.ToDisplayString(PipelineShapeResolver.DisplayNameFormat);
             segmentInputsJoined = string.Join(InputSeparator, segmentInputTypeNames);
             segmentResultTypeName = resolvedResultTypeName;
         }
@@ -71,6 +88,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             pipelineInputTypeName,
             pipelineResultTypeName,
             parameterSymbol.Name,
+            segmentTypeName,
             segmentInputsJoined,
             segmentResultTypeName,
             parameterLocation,
@@ -78,21 +96,21 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         );
     }
 
-    private static void Execute(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, SourceProductionContext context)
+    private static bool Execute(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, SourceProductionContext context, bool hasActivitySource)
     {
         var containingTypeLocation = parameters[0].ContainingTypeLocation ?? Location.None;
 
         if (!containingType.IsPartial)
         {
             context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustBePartial, containingTypeLocation, containingType.Name));
-            return;
+            return false;
         }
 
         var pipelineResultTypeName = parameters[0].PipelineResultTypeName;
         if (pipelineResultTypeName is null)
         {
             context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustImplementPipeline, containingTypeLocation, containingType.Name));
-            return;
+            return false;
         }
 
         var pipelineInputTypeName = parameters[0].PipelineInputTypeName;
@@ -109,12 +127,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (hasErrors)
         {
-            return;
+            return false;
         }
 
         var segments = parameters
             .Select(static p => new SegmentModel(
                 p.ParameterName,
+                p.SegmentTypeName!,
                 string.IsNullOrEmpty(p.SegmentInputTypeNamesJoined)
                     ? ImmutableArray<string>.Empty
                     : p.SegmentInputTypeNamesJoined!.Split(new[] { InputSeparator }, StringSplitOptions.None).ToImmutableArray(),
@@ -135,14 +154,14 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (hasErrors)
         {
-            return;
+            return false;
         }
 
         var terminal = byResultType[pipelineResultTypeName].SingleOrDefault();
         if (terminal.ParameterName is null)
         {
             context.ReportDiagnostic(Diagnostic.Create(MissingTerminalSegment, containingTypeLocation, containingType.Name, pipelineResultTypeName));
-            return;
+            return false;
         }
 
         var resultProviders = segments.ToDictionary(static s => s.ResultTypeName, static s => s.ParameterName);
@@ -183,13 +202,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (hasErrors)
         {
-            return;
+            return false;
         }
 
         if (TryFindCycle(segments, dependencies, out var cycleDescription))
         {
             context.ReportDiagnostic(Diagnostic.Create(DependencyCycle, containingTypeLocation, containingType.Name, cycleDescription));
-            return;
+            return false;
         }
 
         var reachable = ComputeReachableFrom(terminal.ParameterName, dependencies);
@@ -204,11 +223,12 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (hasErrors)
         {
-            return;
+            return false;
         }
 
-        var source = GenerateSource(containingType, pipelineInputTypeName, pipelineResultTypeName, segments, dependencies, terminal.ParameterName);
+        var source = GenerateSource(containingType, pipelineInputTypeName, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, hasActivitySource);
         context.AddSource($"{containingType.Name}.g.cs", source);
+        return true;
     }
 
     private static bool TryFindCycle(ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<string>> dependencies, out string? cycleDescription)
@@ -281,7 +301,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return reachable;
     }
 
-    private static string GenerateSource(TypeDeclarationModel containingType, string? pipelineInputTypeName, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<string>> dependencies, string terminalParameterName)
+    private static string GenerateSource(TypeDeclarationModel containingType, string? pipelineInputTypeName, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<string>> dependencies, string terminalParameterName, bool hasActivitySource)
     {
         var builder = new StringBuilder()
             .AppendLine("// <auto-generated/>")
@@ -294,12 +314,25 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         var inputParameter = pipelineInputTypeName is null ? "" : $"{pipelineInputTypeName} input, ";
+        var fullyQualifiedPipelineName = containingType.Namespace.Length > 0
+            ? $"{containingType.Namespace}.{containingType.Name}"
+            : containingType.Name;
 
-        builder.AppendLine($"partial class {containingType.Name}")
+        builder
+            .AppendLine($"partial class {containingType.Name}")
             .AppendLine("{")
             .AppendLine($"    public async global::System.Threading.Tasks.Task<{pipelineResultTypeName}> ExecuteAsync({inputParameter}global::System.Threading.CancellationToken token)")
-            .AppendLine("    {")
-            .AppendLine("        using var cts = global::System.Threading.CancellationTokenSource.CreateLinkedTokenSource(token);")
+            .AppendLine("    {");
+
+        if (hasActivitySource)
+        {
+            builder
+                .AppendLine($"        using var activity = global::Dovetail.DovetailActivitySource.Instance.StartActivity(\"{containingType.Name}.ExecuteAsync\");")
+                .AppendLine($"        activity?.SetTag(\"dovetail.pipeline\", \"{fullyQualifiedPipelineName}\");")
+                .AppendLine();
+        }
+
+        builder.AppendLine("        using var cts = global::System.Threading.CancellationTokenSource.CreateLinkedTokenSource(token);")
             .AppendLine("        var linkedToken = cts.Token;")
             .AppendLine();
 
@@ -313,9 +346,15 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             .AppendLine("        {")
             .AppendLine($"            return await {terminalParameterName}Task.ConfigureAwait(false);")
             .AppendLine("        }")
-            .AppendLine("        catch")
-            .AppendLine("        {")
-            .AppendLine("            cts.Cancel();")
+            .AppendLine(hasActivitySource ? "        catch (global::System.Exception ex)" : "        catch")
+            .AppendLine("        {");
+
+        if (hasActivitySource)
+        {
+            builder.AppendLine("            activity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);");
+        }
+
+        builder.AppendLine("            cts.Cancel();")
             .AppendLine();
 
         var siblingTasks = string.Join(", ", segments
@@ -324,12 +363,14 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (siblingTasks.Length > 0)
         {
-            builder.AppendLine($"            try {{ await global::System.Threading.Tasks.Task.WhenAll({siblingTasks}).ConfigureAwait(false); }}")
+            builder
+                .AppendLine($"            try {{ await global::System.Threading.Tasks.Task.WhenAll({siblingTasks}).ConfigureAwait(false); }}")
                 .AppendLine("            catch { }")
                 .AppendLine();
         }
 
-        builder.AppendLine("            throw;")
+        builder
+            .AppendLine("            throw;")
             .AppendLine("        }")
             .AppendLine();
 
@@ -344,16 +385,57 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
             args.Add("linkedToken");
 
-            builder.AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async() =>")
-                .AppendLine($"            await {segment.ParameterName}.ExecuteAsync({string.Join(", ", args)}).ConfigureAwait(false);")
-                .AppendLine();
+            var argList = string.Join(", ", args);
+
+            if (hasActivitySource)
+            {
+                builder
+                    .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async()")
+                    .AppendLine("        {")
+                    .AppendLine($"            using var segmentActivity = global::Dovetail.DovetailActivitySource.Instance.StartActivity(\"{containingType.Name}.{segment.ParameterName}\");")
+                    .AppendLine($"            segmentActivity?.SetTag(\"dovetail.pipeline\", \"{fullyQualifiedPipelineName}\");")
+                    .AppendLine($"            segmentActivity?.SetTag(\"dovetail.segment\", \"{segment.ParameterName}\");")
+                    .AppendLine($"            segmentActivity?.SetTag(\"dovetail.segment.type\", \"{segment.SegmentTypeName}\");")
+                    .AppendLine("            try")
+                    .AppendLine("            {")
+                    .AppendLine($"                return await {segment.ParameterName}.ExecuteAsync({argList}).ConfigureAwait(false);")
+                    .AppendLine("            }")
+                    .AppendLine("            catch (global::System.Exception ex)")
+                    .AppendLine("            {")
+                    .AppendLine("                segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);")
+                    .AppendLine("                throw;")
+                    .AppendLine("            }")
+                    .AppendLine("        }")
+                    .AppendLine();
+            }
+            else
+            {
+                builder
+                    .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async() =>")
+                    .AppendLine($"            await {segment.ParameterName}.ExecuteAsync({argList}).ConfigureAwait(false);")
+                    .AppendLine();
+            }
         }
 
-        builder.AppendLine("    }")
+        builder
+            .AppendLine("    }")
             .AppendLine("}");
 
         return builder.ToString();
     }
+
+    private static string GenerateActivitySource() =>
+        new StringBuilder()
+            .AppendLine("// <auto-generated/>")
+            .AppendLine("#nullable enable")
+            .AppendLine()
+            .AppendLine("namespace Dovetail;")
+            .AppendLine()
+            .AppendLine("internal static class DovetailActivitySource")
+            .AppendLine("{")
+            .AppendLine("    internal static readonly global::System.Diagnostics.ActivitySource Instance = new global::System.Diagnostics.ActivitySource(\"Dovetail\");")
+            .AppendLine("}")
+            .ToString();
 
     private static string ToPascalCase(string name) =>
         name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name.Substring(1);
