@@ -7,6 +7,7 @@ internal readonly record struct SegmentParameterInfo(
     string? PipelineInputTypeName,
     string? PipelineResultTypeName,
     string ParameterName,
+    string? SegmentTypeName,
     string? SegmentInputTypeNamesJoined,
     string? SegmentResultTypeName,
     Location? ParameterLocation,

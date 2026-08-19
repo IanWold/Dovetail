@@ -25,7 +25,7 @@ Dovetail is a Roslyn source generator for building async pipelines out of small,
 
 **Real parallelism, not just async.** Segments that don't depend on each other run concurrently automatically — you never hand-write `Task.WhenAll` or accidentally serialize independent work by awaiting too early. Segments that do depend on something simply await the task that produces it, and the generated code takes care of the rest.
 
-## Quick start
+## Quickstart
 
 A segment is any class implementing `IPipelineSegment<TResult>` (or the multi-input generic variants, up to eight inputs). Its inputs and result are ordinary types — no interfaces or base classes required on them.
 
@@ -73,27 +73,7 @@ var pipeline = new ItemPipeline(infoSegment, priceSegment, imagesSegment, assemb
 ItemModel model = await pipeline.ExecuteAsync(itemId, cancellationToken);
 ```
 
-## Dependency injection
-
-If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
-
-```csharp
-services.AddPipelines();
-```
-
-This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
-
-```csharp
-public class ItemsController(ItemPipeline pipeline)
-{
-    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
-        pipeline.ExecuteAsync(itemId, ct);
-}
-```
-
-`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
-
-## How it works
+## Detailed Explanation
 
 Dovetail reads each segment's `IPipelineSegment<...>` interface to learn its input and result types, then wires the pipeline together purely by matching those types:
 
@@ -150,7 +130,27 @@ public partial class ItemPipeline
 
 (Simplified for readability — the generator fully qualifies every type it emits.)
 
-### Chaining pipelines
+### Dependency Injection
+
+If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
+
+```csharp
+services.AddPipelines();
+```
+
+This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
+
+```csharp
+public class ItemsController(ItemPipeline pipeline)
+{
+    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
+        pipeline.ExecuteAsync(itemId, ct);
+}
+```
+
+`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
+
+### Chaining Pipelines
 
 `IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (0 or 1 input). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
 
@@ -165,7 +165,22 @@ Since both interfaces declare an identical `Task<ItemInfo> ExecuteAsync(int, Can
 
 This only applies when the shapes match. A type that implements `IPipelineSegment<...>` without a matching `IPipeline<...>` — the ordinary case still needs its `ExecuteAsync` hand-written, exactly like any other segment.
 
-### Testing segments
+### Tracing
+
+If `System.Diagnostics.DiagnosticSource` is available, Dovetail wraps the pipeline and every segment in an `Activity`, so you can see exactly which segment was slow without adding anything yourself:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddSource("Dovetail"));
+```
+
+Every pipeline's `ExecuteAsync` starts an activity named `"{Pipeline}.ExecuteAsync"`, and each segment gets its own nested `"{Pipeline}.{segment}"` activity, nested such that a segment's span starts while it's still the ambient activity from the pipeline that kicked it off. Each activity carries `dovetail.pipeline`, and segment activities also carry `dovetail.segment` (its role in this pipeline) and `dovetail.segment.type` (its concrete class). If a segment throws, its activity is marked `Error` before the exception propagates.
+
+Like the dependency injection generation, the tracing logic is only generated when `System.Diagnostics.DiagnosticSource` is available; Dovetail doesn't depend on it. When the namespace is unavailable, `ExecuteAsync` is generated exactly as if tracing didn't exist.
+
+Note that the tracing calls are still nearly free if nothing's listening: `Activity.StartActivity` returns `null` without a registered listener, and every call after it is a `?.`-guarded no-op.
+
+### Testing Segments
 
 Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
 
