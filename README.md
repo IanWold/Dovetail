@@ -6,7 +6,7 @@
 Dovetail
 </h1>
 
-<a href="https://www.nuget.org/packages/Dovetail"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/PostgreSignalR?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
+<a href="https://www.nuget.org/packages/Dovetail"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/Dovetail?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
 
 
 A source generator for implementing asynchronous pipelines of any complexity
