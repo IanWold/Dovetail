@@ -180,33 +180,6 @@ Like the dependency injection generation, the tracing logic is only generated wh
 
 Note that the tracing calls are still nearly free if nothing's listening: `Activity.StartActivity` returns `null` without a registered listener, and every call after it is a `?.`-guarded no-op.
 
-### Testing Segments
-
-Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
-
-```csharp
-public class ItemPriceSegmentTests
-{
-    [Fact]
-    public async Task ExecuteAsync_ReturnsCurrentPrice()
-    {
-        var segment = new ItemPriceSegment(new FakePriceService(19.99m));
-
-        var result = await segment.ExecuteAsync(new ItemInfo { Sku = "SKU-1" }, CancellationToken.None);
-
-        Assert.Equal(19.99m, result.Amount);
-    }
-
-    private class FakePriceService(decimal price) : IPriceService
-    {
-        public Task<Price> GetCurrentPriceAsync(string sku, CancellationToken ct) =>
-            Task.FromResult(new Price(price));
-    }
-}
-```
-
-`ExecuteAsync` itself isn't something you typically need to unit test — Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
-
 ## Architectural Considerations
 
 ### Error Handling
@@ -237,6 +210,33 @@ One thing worth being careful about: don't catch `OperationCanceledException` th
 When two or more segments fail at the same time, only **one** exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from multiple segments. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
 
 In practice: if two unrelated segments both throw at once, you'll see whichever one happened to be part of the chain the terminal segment was awaiting when it faulted, not both. If you need visibility into every failure rather than just the one that propagates, [tracing](#tracing) marks *every* failing segment's own activity `Error`, regardless of which single exception makes it back to the caller.
+
+### Testing Segments
+
+Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
+
+```csharp
+public class ItemPriceSegmentTests
+{
+    [Fact]
+    public async Task ExecuteAsync_ReturnsCurrentPrice()
+    {
+        var segment = new ItemPriceSegment(new FakePriceService(19.99m));
+
+        var result = await segment.ExecuteAsync(new ItemInfo { Sku = "SKU-1" }, CancellationToken.None);
+
+        Assert.Equal(19.99m, result.Amount);
+    }
+
+    private class FakePriceService(decimal price) : IPriceService
+    {
+        public Task<Price> GetCurrentPriceAsync(string sku, CancellationToken ct) =>
+            Task.FromResult(new Price(price));
+    }
+}
+```
+
+`ExecuteAsync` itself isn't something you typically need to unit test — Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
 
 ## Diagnostics
 
