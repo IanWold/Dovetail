@@ -1,12 +1,8 @@
 <div align="center">
 
 <h1>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="logo-light.svg">
-  <img alt="Dovetail" src="logo-light.svg" height="64">
-</picture>
-
+<picture><img alt="Dovetail" src="logo-color.svg" height="64"></picture>
+  
 Dovetail
 </h1>
 
