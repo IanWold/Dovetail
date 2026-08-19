@@ -26,22 +26,22 @@ public class PipelineSourceGeneratorTests
 
             public class RootSegment : IPipelineSegment<int, RootResult>
             {
-                public Task<RootResult> RunAsync(int value, CancellationToken ct) => Task.FromResult(new RootResult { Value = value });
+                public Task<RootResult> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new RootResult { Value = value });
             }
 
             public class LeftSegment : IPipelineSegment<RootResult, LeftResult>
             {
-                public Task<LeftResult> RunAsync(RootResult root, CancellationToken ct) => Task.FromResult(new LeftResult { Value = root.Value + 1 });
+                public Task<LeftResult> ExecuteAsync(RootResult root, CancellationToken ct) => Task.FromResult(new LeftResult { Value = root.Value + 1 });
             }
 
             public class RightSegment : IPipelineSegment<RootResult, RightResult>
             {
-                public Task<RightResult> RunAsync(RootResult root, CancellationToken ct) => Task.FromResult(new RightResult { Value = root.Value + 2 });
+                public Task<RightResult> ExecuteAsync(RootResult root, CancellationToken ct) => Task.FromResult(new RightResult { Value = root.Value + 2 });
             }
 
             public class JoinSegment : IPipelineSegment<RootResult, LeftResult, RightResult, FinalResult>
             {
-                public Task<FinalResult> RunAsync(RootResult root, LeftResult left, RightResult right, CancellationToken ct) =>
+                public Task<FinalResult> ExecuteAsync(RootResult root, LeftResult left, RightResult right, CancellationToken ct) =>
                     Task.FromResult(new FinalResult { Value = root.Value + left.Value + right.Value });
             }
 
@@ -66,9 +66,9 @@ public class PipelineSourceGeneratorTests
         Assert.Contains("var joinTask = JoinAsync();", text);
         Assert.Contains("return await joinTask.ConfigureAwait(false);", text);
         Assert.Contains("Task.WhenAll(rootTask, leftTask, rightTask)", text);
-        Assert.Contains("await root.RunAsync(input, linkedToken).ConfigureAwait(false);", text);
-        Assert.Contains("await left.RunAsync(await rootTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);", text);
-        Assert.Contains("await join.RunAsync(await rootTask.ConfigureAwait(false), await leftTask.ConfigureAwait(false), await rightTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);", text);
+        Assert.Contains("await root.ExecuteAsync(input, linkedToken).ConfigureAwait(false);", text);
+        Assert.Contains("await left.ExecuteAsync(await rootTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);", text);
+        Assert.Contains("await join.ExecuteAsync(await rootTask.ConfigureAwait(false), await leftTask.ConfigureAwait(false), await rightTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);", text);
     }
 
     [Fact]
@@ -86,12 +86,12 @@ public class PipelineSourceGeneratorTests
 
             public class DoubleSegment : IPipelineSegment<int, Doubled>
             {
-                public Task<Doubled> RunAsync(int value, CancellationToken ct) => Task.FromResult(new Doubled(value * 2));
+                public Task<Doubled> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Doubled(value * 2));
             }
 
             public class ToStringSegment : IPipelineSegment<Doubled, string>
             {
-                public Task<string> RunAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
+                public Task<string> ExecuteAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
             }
 
             public partial class NumberPipeline(
@@ -128,12 +128,12 @@ public class PipelineSourceGeneratorTests
 
             public class DoubleSegment : IPipelineSegment<int, Doubled>
             {
-                public Task<Doubled> RunAsync(int value, CancellationToken ct) => throw new InvalidOperationException("boom");
+                public Task<Doubled> ExecuteAsync(int value, CancellationToken ct) => throw new InvalidOperationException("boom");
             }
 
             public class ToStringSegment : IPipelineSegment<Doubled, string>
             {
-                public Task<string> RunAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
+                public Task<string> ExecuteAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
             }
 
             public partial class NumberPipeline(
@@ -168,7 +168,7 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<int, int>
             {
-                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
             public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, int>;
@@ -198,7 +198,7 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<int, int>
             {
-                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
             public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, int>;
@@ -224,12 +224,12 @@ public class PipelineSourceGeneratorTests
 
             public class DoubleSegment : IPipelineSegment<int, Doubled>
             {
-                public Task<Doubled> RunAsync(int value, CancellationToken ct) => Task.FromResult(new Doubled(value * 2));
+                public Task<Doubled> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Doubled(value * 2));
             }
 
             public class ToStringSegment : IPipelineSegment<Doubled, string>
             {
-                public Task<string> RunAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
+                public Task<string> ExecuteAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
             }
 
             public partial class NumberPipeline(
@@ -257,6 +257,58 @@ public class PipelineSourceGeneratorTests
     }
 
     [Fact]
+    public async Task PipelineImplementingMatchingSegmentShape_CanBeNestedAsASegment()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct Doubled(int Value);
+
+            public class DoubleSegment : IPipelineSegment<int, Doubled>
+            {
+                public Task<Doubled> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Doubled(value * 2));
+            }
+
+            public partial class InnerPipeline(
+                [Segment] DoubleSegment doubler
+            ) : IPipeline<int, Doubled>, IPipelineSegment<int, Doubled>;
+
+            public class ToStringSegment : IPipelineSegment<Doubled, string>
+            {
+                public Task<string> ExecuteAsync(Doubled value, CancellationToken ct) => Task.FromResult(value.Value.ToString());
+            }
+
+            public partial class OuterPipeline(
+                [Segment] InnerPipeline inner,
+                [Segment] ToStringSegment stringifier
+            ) : IPipeline<int, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var outerType = assembly.GetType("Sample.OuterPipeline")!;
+        var innerType = assembly.GetType("Sample.InnerPipeline")!;
+        var doubler = Activator.CreateInstance(assembly.GetType("Sample.DoubleSegment")!)!;
+        var inner = Activator.CreateInstance(innerType, doubler)!;
+        var stringifier = Activator.CreateInstance(assembly.GetType("Sample.ToStringSegment")!)!;
+        var outer = Activator.CreateInstance(outerType, inner, stringifier)!;
+
+        // InnerPipeline implements both IPipeline<int, Doubled> and IPipelineSegment<int, Doubled> —
+        // there should be exactly one ExecuteAsync(int, CancellationToken) satisfying both.
+        Assert.Single(innerType.GetMethods(), m => m.Name == "ExecuteAsync" && m.GetParameters().Length == 2);
+
+        var method = outerType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(outer, [10, CancellationToken.None])!;
+        var result = await task;
+
+        Assert.Equal("20", result);
+    }
+
+    [Fact]
     public void ReportsDiagnostic_WhenContainingTypeIsNotPartial()
     {
         const string source = """
@@ -269,7 +321,7 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<int, int>
             {
-                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
             public class NotPartialPipeline([Segment] FooSegment foo) : IPipeline<int, int>;
@@ -291,7 +343,7 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<int, int>
             {
-                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
             public partial class NotAPipeline([Segment] FooSegment foo);
@@ -332,7 +384,7 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<int, int>
             {
-                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
             public partial class MissingTerminalPipeline([Segment] FooSegment foo) : IPipeline<int, string>;
@@ -354,12 +406,12 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<int, int>
             {
-                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
             public class BarSegment : IPipelineSegment<int, int>
             {
-                public Task<int> RunAsync(int value, CancellationToken ct) => Task.FromResult(value);
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
             public partial class DuplicatePipeline([Segment] FooSegment foo, [Segment] BarSegment bar) : IPipeline<int, int>;
@@ -381,7 +433,7 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<string, int>
             {
-                public Task<int> RunAsync(string value, CancellationToken ct) => Task.FromResult(value.Length);
+                public Task<int> ExecuteAsync(string value, CancellationToken ct) => Task.FromResult(value.Length);
             }
 
             public partial class UnresolvedPipeline([Segment] FooSegment foo) : IPipeline<int, int>;
@@ -406,12 +458,12 @@ public class PipelineSourceGeneratorTests
 
             public class SegA : IPipelineSegment<B, A>
             {
-                public Task<A> RunAsync(B value, CancellationToken ct) => Task.FromResult(new A());
+                public Task<A> ExecuteAsync(B value, CancellationToken ct) => Task.FromResult(new A());
             }
 
             public class SegB : IPipelineSegment<A, B>
             {
-                public Task<B> RunAsync(A value, CancellationToken ct) => Task.FromResult(new B());
+                public Task<B> ExecuteAsync(A value, CancellationToken ct) => Task.FromResult(new B());
             }
 
             public partial class CyclePipeline([Segment] SegA segA, [Segment] SegB segB) : IPipeline<A>;
@@ -436,12 +488,12 @@ public class PipelineSourceGeneratorTests
 
             public class FooSegment : IPipelineSegment<int, Foo>
             {
-                public Task<Foo> RunAsync(int value, CancellationToken ct) => Task.FromResult(new Foo());
+                public Task<Foo> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Foo());
             }
 
             public class OrphanSegment : IPipelineSegment<int, Bar>
             {
-                public Task<Bar> RunAsync(int value, CancellationToken ct) => Task.FromResult(new Bar());
+                public Task<Bar> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Bar());
             }
 
             public partial class OrphanPipeline([Segment] FooSegment foo, [Segment] OrphanSegment orphan) : IPipeline<int, Foo>;
