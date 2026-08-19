@@ -41,6 +41,9 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             return null;
         }
 
+        var parameterLocation = context.TargetNode.GetLocation();
+        var containingTypeLocation = containingType.Locations.FirstOrDefault();
+
         var isPartial = containingType.DeclaringSyntaxReferences
             .Select(static reference => reference.GetSyntax())
             .OfType<TypeDeclarationSyntax>()
@@ -69,22 +72,26 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             pipelineResultTypeName,
             parameterSymbol.Name,
             segmentInputsJoined,
-            segmentResultTypeName
+            segmentResultTypeName,
+            parameterLocation,
+            containingTypeLocation
         );
     }
 
     private static void Execute(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, SourceProductionContext context)
     {
+        var containingTypeLocation = parameters[0].ContainingTypeLocation ?? Location.None;
+
         if (!containingType.IsPartial)
         {
-            context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustBePartial, Location.None, containingType.Name));
+            context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustBePartial, containingTypeLocation, containingType.Name));
             return;
         }
 
         var pipelineResultTypeName = parameters[0].PipelineResultTypeName;
         if (pipelineResultTypeName is null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustImplementPipeline, Location.None, containingType.Name));
+            context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustImplementPipeline, containingTypeLocation, containingType.Name));
             return;
         }
 
@@ -95,7 +102,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         {
             if (parameter.SegmentResultTypeName is null)
             {
-                context.ReportDiagnostic(Diagnostic.Create(SegmentTypeMustImplementPipelineSegment, Location.None, parameter.ParameterName));
+                context.ReportDiagnostic(Diagnostic.Create(SegmentTypeMustImplementPipelineSegment, parameter.ParameterLocation ?? Location.None, parameter.ParameterName));
                 hasErrors = true;
             }
         }
@@ -111,7 +118,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 string.IsNullOrEmpty(p.SegmentInputTypeNamesJoined)
                     ? ImmutableArray<string>.Empty
                     : p.SegmentInputTypeNamesJoined!.Split(new[] { InputSeparator }, StringSplitOptions.None).ToImmutableArray(),
-                p.SegmentResultTypeName!
+                p.SegmentResultTypeName!,
+                p.ParameterLocation
             ))
             .ToImmutableArray();
 
@@ -119,7 +127,9 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         foreach (var duplicates in byResultType.Where(static g => g.Count() > 1))
         {
             var names = string.Join(", ", duplicates.Select(static s => $"'{s.ParameterName}'"));
-            context.ReportDiagnostic(Diagnostic.Create(DuplicateSegmentResult, Location.None, names, duplicates.Key));
+            var firstLocation = duplicates.First().ParameterLocation ?? Location.None;
+
+            context.ReportDiagnostic(Diagnostic.Create(DuplicateSegmentResult, firstLocation, names, duplicates.Key));
             hasErrors = true;
         }
 
@@ -131,7 +141,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var terminal = byResultType[pipelineResultTypeName].SingleOrDefault();
         if (terminal.ParameterName is null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(MissingTerminalSegment, Location.None, containingType.Name, pipelineResultTypeName));
+            context.ReportDiagnostic(Diagnostic.Create(MissingTerminalSegment, containingTypeLocation, containingType.Name, pipelineResultTypeName));
             return;
         }
 
@@ -148,7 +158,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
                 if (matchesInput && matchesSegment)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, Location.None, segment.ParameterName, inputType, $"it matches both the pipeline input and segment '{providerName}'"));
+                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, $"it matches both the pipeline input and segment '{providerName}'"));
                     hasErrors = true;
                 }
                 else if (matchesInput)
@@ -161,7 +171,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, Location.None, segment.ParameterName, inputType, "no segment produces it and it does not match the pipeline input"));
+                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, "no segment produces it and it does not match the pipeline input"));
                     hasErrors = true;
                 }
             }
@@ -178,7 +188,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (TryFindCycle(segments, dependencies, out var cycleDescription))
         {
-            context.ReportDiagnostic(Diagnostic.Create(DependencyCycle, Location.None, containingType.Name, cycleDescription));
+            context.ReportDiagnostic(Diagnostic.Create(DependencyCycle, containingTypeLocation, containingType.Name, cycleDescription));
             return;
         }
 
@@ -187,7 +197,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         {
             if (!reachable.Contains(segment.ParameterName))
             {
-                context.ReportDiagnostic(Diagnostic.Create(UnreachableSegment, Location.None, segment.ParameterName, pipelineResultTypeName));
+                context.ReportDiagnostic(Diagnostic.Create(UnreachableSegment, segment.ParameterLocation ?? Location.None, segment.ParameterName, pipelineResultTypeName));
                 hasErrors = true;
             }
         }
