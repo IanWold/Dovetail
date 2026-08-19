@@ -5,9 +5,7 @@ namespace Dovetail;
 /// generic <c>IPipelineSegment</c> variant; not intended to be implemented
 /// directly.
 /// </summary>
-public interface IPipelineSegment
-{
-}
+public interface IPipelineSegment { }
 
 /// <summary>
 /// A pipeline segment that consumes no inputs and produces

@@ -13,7 +13,6 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
     private const string SegmentAttributeFullName = "Dovetail.SegmentAttribute";
     private const string InputSeparator = "";
 
-
     private static readonly SymbolDisplayFormat TypeNameFormat = SymbolDisplayFormat.FullyQualifiedFormat;
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
