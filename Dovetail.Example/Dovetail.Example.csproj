@@ -7,23 +7,16 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Writes Dovetail's generated ExecuteAsync methods to Generated/ on every build,
-         so they're there to read regardless of what the IDE's language server thinks. -->
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>Generated</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Dovetail merges its API and its generator into one project, so a plain
-         ProjectReference only picks it up as a normal compile reference. This
-         second reference is what actually makes the generator run. -->
     <ProjectReference Include="..\Dovetail\Dovetail.csproj" />
     <ProjectReference Include="..\Dovetail\Dovetail.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Without this, the SDK's default globs would pick the emitted copies back up
-         as additional source files on the next build, causing duplicate-type errors. -->
     <Compile Remove="$(CompilerGeneratedFilesOutputPath)/**/*.cs" />
   </ItemGroup>
 
