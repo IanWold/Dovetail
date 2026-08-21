@@ -203,7 +203,7 @@ public partial class ItemPipeline(
 }
 ```
 
-This supports cases where it would be cumbersome to create a segment class for simple data transformations in the middle of a pipeline run:
+This also supports cases where it would be cumbersome to create a segment class for simple data transformations in the middle of a pipeline run:
 
 ```csharp
 public record OrderInfo(OrderId OrderId, CustomerId CustomerId, ...);
