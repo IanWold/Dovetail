@@ -14,17 +14,25 @@ internal static class PipelineShapeResolver
     );
 
     internal static bool TryGetPipelineShape(INamedTypeSymbol pipelineType, out ImmutableArray<string> inputTypeNames, out string resultTypeName) =>
-        TryGetShape(pipelineType, "IPipeline", out inputTypeNames, out resultTypeName);
+        TryGetShape(pipelineType, "IPipeline", out inputTypeNames, out resultTypeName, out _);
 
     internal static bool TryGetSegmentShape(INamedTypeSymbol segmentType, out ImmutableArray<string> inputTypeNames, out string resultTypeName) =>
-        TryGetShape(segmentType, "IPipelineSegment", out inputTypeNames, out resultTypeName);
+        TryGetShape(segmentType, "IPipelineSegment", out inputTypeNames, out resultTypeName, out _);
 
-    private static bool TryGetShape(INamedTypeSymbol type, string interfaceName, out ImmutableArray<string> inputTypeNames, out string resultTypeName)
+    internal static bool TryGetSegmentInterface(INamedTypeSymbol segmentType, out string interfaceTypeName) =>
+        TryGetShape(segmentType, "IPipelineSegment", out _, out _, out interfaceTypeName);
+
+    private static bool TryGetShape(INamedTypeSymbol type, string interfaceName, out ImmutableArray<string> inputTypeNames, out string resultTypeName, out string interfaceTypeName)
     {
         inputTypeNames = ImmutableArray<string>.Empty;
         resultTypeName = "";
+        interfaceTypeName = "";
 
-        var matches = type.AllInterfaces
+        var candidateInterfaces = type.TypeKind == TypeKind.Interface
+            ? type.AllInterfaces.Insert(0, type)
+            : type.AllInterfaces;
+
+        var matches = candidateInterfaces
             .Where(i =>
                 i.Arity is >= 1 and <= 9
                 && i.Name == interfaceName
@@ -43,6 +51,7 @@ internal static class PipelineShapeResolver
             .Select(static t => t.ToDisplayString(TypeNameFormat))
             .ToImmutableArray();
         resultTypeName = typeArguments[typeArguments.Length - 1].ToDisplayString(TypeNameFormat);
+        interfaceTypeName = matches[0].ToDisplayString(TypeNameFormat);
 
         return true;
     }

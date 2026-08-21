@@ -147,4 +147,13 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor DuplicateSegmentInterfaceImplementation = new(
+        id: "DOVE017",
+        title: "More than one segment implements the same IPipelineSegment<...> interface",
+        messageFormat: "Segments {0} all implement '{1}'; AddPipelines() can't tell which one to register for that interface, so give each a distinct result type or inject them by their concrete type instead",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

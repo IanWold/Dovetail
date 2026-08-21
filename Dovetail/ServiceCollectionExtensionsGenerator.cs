@@ -3,6 +3,7 @@ using System.Text;
 using Dovetail.DependencyInjection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using static Dovetail.Diagnostics;
 
 namespace Dovetail;
 
@@ -13,15 +14,15 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
 
     internal const string RegisteredTypesTrackingName = "RegisteredTypes";
 
-    private static readonly SymbolDisplayFormat BaseNameFormat =
-        PipelineShapeResolver.TypeNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
+    private static readonly SymbolDisplayFormat BaseNameFormat = PipelineShapeResolver.TypeNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var candidates = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, _) => node is TypeDeclarationSyntax { BaseList.Types.Count: > 0 },
-                transform: static (ctx, _) => GetCandidate(ctx))
+                transform: static (ctx, _) => GetCandidate(ctx)
+            )
             .Where(static candidate => candidate is not null)
             .Select(static (candidate, _) => candidate!.Value)
             .Collect()
@@ -44,6 +45,25 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
                 return;
             }
 
+            var segmentsByInterface = distinctTypes
+                .Where(static t => !t.IsPipeline && t.SegmentInterfaceTypeName is not null)
+                .ToLookup(static t => t.SegmentInterfaceTypeName);
+
+            var hasErrors = false;
+            foreach (var duplicates in segmentsByInterface.Where(static g => g.Count() > 1))
+            {
+                var names = string.Join(", ", duplicates.Select(static t => $"'{t.FullyQualifiedName}'"));
+                var location = duplicates.Select(static t => t.Location).FirstOrDefault(static l => l is not null) ?? Location.None;
+
+                spc.ReportDiagnostic(Diagnostic.Create(DuplicateSegmentInterfaceImplementation, location, names, duplicates.Key));
+                hasErrors = true;
+            }
+
+            if (hasErrors)
+            {
+                return;
+            }
+
             spc.AddSource("DovetailServiceCollectionExtensions.g.cs", GenerateSource(distinctTypes));
         });
     }
@@ -57,15 +77,20 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
 
         var fullyQualifiedName = symbol.ToDisplayString(BaseNameFormat);
         var lifetime = GetLifetime(symbol);
+        var location = symbol.Locations.FirstOrDefault();
 
         if (PipelineShapeResolver.TryGetSegmentShape(symbol, out _, out _))
         {
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false, symbol.Arity, symbol.IsValueType, lifetime);
+            string? interfaceTypeName = symbol.Arity == 0 && PipelineShapeResolver.TryGetSegmentInterface(symbol, out var resolvedInterfaceTypeName)
+                ? resolvedInterfaceTypeName
+                : null;
+
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false, symbol.Arity, symbol.IsValueType, lifetime, interfaceTypeName, location);
         }
 
         if (PipelineShapeResolver.TryGetPipelineShape(symbol, out _, out _))
         {
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true, symbol.Arity, symbol.IsValueType, lifetime);
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true, symbol.Arity, symbol.IsValueType, lifetime, SegmentInterfaceTypeName: null, location);
         }
 
         return null;
@@ -76,7 +101,8 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         foreach (var attribute in symbol.GetAttributes())
         {
             if (attribute.AttributeClass is not { Name: nameof(LifetimeAttribute) } attributeClass
-                || attributeClass.ContainingNamespace.ToDisplayString() != "Dovetail.DependencyInjection")
+                || attributeClass.ContainingNamespace.ToDisplayString() != "Dovetail.DependencyInjection"
+            )
             {
                 continue;
             }
@@ -107,6 +133,11 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         foreach (var segment in types.Where(static t => !t.IsPipeline).OrderBy(static t => t.FullyQualifiedName, StringComparer.Ordinal))
         {
             builder.AppendLine($"        {GetRegistrationExpression(segment)};");
+
+            if (segment.SegmentInterfaceTypeName is { } interfaceTypeName)
+            {
+                builder.AppendLine($"        {GetInterfaceForwardingExpression(segment, interfaceTypeName)};");
+            }
         }
 
         foreach (var pipeline in types.Where(static t => t.IsPipeline).OrderBy(static t => t.FullyQualifiedName, StringComparer.Ordinal))
@@ -121,17 +152,17 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         return builder.ToString();
     }
 
+    private static string GetMethodName(ServiceLifetime lifetime) => lifetime switch
+    {
+        ServiceLifetime.Singleton => "AddSingleton",
+        ServiceLifetime.Scoped => "AddScoped",
+        _ => "AddTransient"
+    };
+
     private static string GetRegistrationExpression(RegisteredTypeInfo type)
     {
-        var methodName = type.Lifetime switch
-        {
-            ServiceLifetime.Singleton => "AddSingleton",
-            ServiceLifetime.Scoped => "AddScoped",
-            _ => "AddTransient"
-        };
+        var methodName = GetMethodName(type.Lifetime);
 
-        // MEDI's generic-method overloads (AddTransient<TService>(), etc.) require TService : class,
-        // so value-type pipelines/segments must go through the Type-based overload too, not just open generics.
         if (type.Arity == 0 && !type.IsValueType)
         {
             return $"services.{methodName}<{type.FullyQualifiedName}>()";
@@ -142,5 +173,11 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
             : $"{type.FullyQualifiedName}<{new string(',', type.Arity - 1)}>";
 
         return $"services.{methodName}(typeof({typeExpression}), typeof({typeExpression}))";
+    }
+
+    private static string GetInterfaceForwardingExpression(RegisteredTypeInfo segment, string interfaceTypeName)
+    {
+        var methodName = GetMethodName(segment.Lifetime);
+        return $"services.{methodName}<{interfaceTypeName}>(sp => sp.GetRequiredService<{segment.FullyQualifiedName}>())";
     }
 }
