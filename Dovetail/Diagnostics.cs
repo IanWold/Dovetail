@@ -102,4 +102,22 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor SegmentMethodMustBeStatic = new(
+        id: "DOVE012",
+        title: "A [Segment] method must be static",
+        messageFormat: "'{0}' declares [Segment] on method '{1}', but the method isn't static; segment methods must be static",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    internal static readonly DiagnosticDescriptor SegmentMethodMustReturnAValue = new(
+        id: "DOVE013",
+        title: "A [Segment] method must return a value",
+        messageFormat: "'{0}' declares [Segment] on method '{1}', but it doesn't return a value; segment methods must return a result type or Task<TResult>",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

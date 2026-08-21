@@ -16,3 +16,5 @@ DOVE008 | Dovetail.SourceGenerator | Error | Segment is unreachable from the pip
 DOVE009 | Dovetail.SourceGenerator | Error | The pipeline declares the same input type more than once
 DOVE010 | Dovetail.SourceGenerator | Error | Segment parameter's backing field or property could not be determined
 DOVE011 | Dovetail.SourceGenerator | Error | Segment parameter's backing field or property is ambiguous
+DOVE012 | Dovetail.SourceGenerator | Error | A [Segment] method must be static
+DOVE013 | Dovetail.SourceGenerator | Error | A [Segment] method must return a value

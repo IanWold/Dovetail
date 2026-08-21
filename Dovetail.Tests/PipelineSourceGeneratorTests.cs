@@ -1080,6 +1080,305 @@ public class PipelineSourceGeneratorTests
         AssertSingleDiagnostic(source, "DOVE009");
     }
 
+    [Fact]
+    public void EmitsFanOutFanIn_ForStaticMethodSegment()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct OrderId(int Value);
+            public readonly record struct UserId(int Value);
+
+            public class OrderInfo { public UserId UserId { get; init; } }
+            public class CustomerProfile { public UserId UserId { get; init; } }
+
+            public class OrderInfoSegment : IPipelineSegment<OrderId, OrderInfo>
+            {
+                public Task<OrderInfo> ExecuteAsync(OrderId orderId, CancellationToken ct) =>
+                    Task.FromResult(new OrderInfo { UserId = new UserId(orderId.Value) });
+            }
+
+            public class CustomerProfileSegment : IPipelineSegment<UserId, CustomerProfile>
+            {
+                public Task<CustomerProfile> ExecuteAsync(UserId userId, CancellationToken ct) =>
+                    Task.FromResult(new CustomerProfile { UserId = userId });
+            }
+
+            public partial class OrderPipeline(
+                [Segment] OrderInfoSegment order,
+                [Segment] CustomerProfileSegment customer
+            ) : IPipeline<OrderId, CustomerProfile>
+            {
+                [Segment]
+                private static UserId ExtractUserId(OrderInfo order) => order.UserId;
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+
+        var generated = Assert.Single(result.Results.Single().GeneratedSources, static s => s.HintName == "OrderPipeline.g.cs");
+        var text = generated.SourceText.ToString();
+
+        Assert.Contains("var ExtractUserIdTask = ExtractUserIdAsync();", text);
+        Assert.Contains("await order.ExecuteAsync(input, linkedToken).ConfigureAwait(false);", text);
+        Assert.Contains("return ExtractUserId(await orderTask.ConfigureAwait(false));", text);
+        Assert.Contains("await customer.ExecuteAsync(await ExtractUserIdTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);", text);
+        Assert.Contains("segmentActivity?.SetTag(\"dovetail.segment.type\", \"ExtractUserId\");", text);
+    }
+
+    [Fact]
+    public async Task GeneratedPipeline_ForStaticMethodSegment_ProducesCorrectResult()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct OrderId(int Value);
+            public readonly record struct UserId(int Value);
+
+            public class OrderInfo { public UserId UserId { get; init; } }
+            public class CustomerProfile { public UserId UserId { get; init; } }
+
+            public class OrderInfoSegment : IPipelineSegment<OrderId, OrderInfo>
+            {
+                public Task<OrderInfo> ExecuteAsync(OrderId orderId, CancellationToken ct) =>
+                    Task.FromResult(new OrderInfo { UserId = new UserId(orderId.Value) });
+            }
+
+            public class CustomerProfileSegment : IPipelineSegment<UserId, CustomerProfile>
+            {
+                public Task<CustomerProfile> ExecuteAsync(UserId userId, CancellationToken ct) =>
+                    Task.FromResult(new CustomerProfile { UserId = userId });
+            }
+
+            public partial class OrderPipeline(
+                [Segment] OrderInfoSegment order,
+                [Segment] CustomerProfileSegment customer
+            ) : IPipeline<OrderId, CustomerProfile>
+            {
+                [Segment]
+                private static UserId ExtractUserId(OrderInfo order) => order.UserId;
+            }
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.OrderPipeline")!;
+        var order = Activator.CreateInstance(assembly.GetType("Sample.OrderInfoSegment")!)!;
+        var customer = Activator.CreateInstance(assembly.GetType("Sample.CustomerProfileSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, order, customer)!;
+
+        var orderIdType = assembly.GetType("Sample.OrderId")!;
+        var orderId = Activator.CreateInstance(orderIdType, 42)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task)method.Invoke(pipeline, [orderId, CancellationToken.None])!;
+
+        await task;
+
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        var userId = result.GetType().GetProperty("UserId")!.GetValue(result)!;
+        var value = (int)userId.GetType().GetProperty("Value")!.GetValue(userId)!;
+
+        Assert.Equal(42, value);
+    }
+
+    [Fact]
+    public void EmitsFanOutFanIn_ForAsyncStaticMethodSegment()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct Seed(int Value);
+            public readonly record struct Doubled(int Value);
+
+            public class SeedSegment : IPipelineSegment<int, Seed>
+            {
+                public Task<Seed> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Seed(value));
+            }
+
+            public partial class DoublePipeline(
+                [Segment] SeedSegment seed
+            ) : IPipeline<int, Doubled>
+            {
+                [Segment]
+                private static async Task<Doubled> Double(Seed seed, CancellationToken ct)
+                {
+                    await Task.Delay(1, ct);
+                    return new Doubled(seed.Value * 2);
+                }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+
+        var generated = Assert.Single(result.Results.Single().GeneratedSources, static s => s.HintName == "DoublePipeline.g.cs");
+        var text = generated.SourceText.ToString();
+
+        Assert.Contains("return await Double(await seedTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);", text);
+    }
+
+    [Fact]
+    public async Task GeneratedPipeline_ForAsyncStaticMethodSegment_ProducesCorrectResult()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct Seed(int Value);
+            public readonly record struct Doubled(int Value);
+
+            public class SeedSegment : IPipelineSegment<int, Seed>
+            {
+                public Task<Seed> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Seed(value));
+            }
+
+            public partial class DoublePipeline(
+                [Segment] SeedSegment seed
+            ) : IPipeline<int, Doubled>
+            {
+                [Segment]
+                private static async Task<Doubled> Double(Seed seed, CancellationToken ct)
+                {
+                    await Task.Delay(1, ct);
+                    return new Doubled(seed.Value * 2);
+                }
+            }
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.DoublePipeline")!;
+        var seed = Activator.CreateInstance(assembly.GetType("Sample.SeedSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, seed)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task)method.Invoke(pipeline, [21, CancellationToken.None])!;
+        
+        await task;
+
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        var value = (int)result.GetType().GetProperty("Value")!.GetValue(result)!;
+
+        Assert.Equal(42, value);
+    }
+
+    [Fact]
+    public async Task GeneratedPipeline_ResolvesCorrectly_WhenSegmentsAreDeclaredOutOfDependencyOrder()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class RootResult { public int Value { get; init; } }
+            public class LeafResult { public int Value { get; init; } }
+
+            public class LeafSegment : IPipelineSegment<RootResult, LeafResult>
+            {
+                public Task<LeafResult> ExecuteAsync(RootResult root, CancellationToken ct) => Task.FromResult(new LeafResult { Value = root.Value + 1 });
+            }
+
+            public class RootSegment : IPipelineSegment<int, RootResult>
+            {
+                public Task<RootResult> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new RootResult { Value = value });
+            }
+
+            public partial class OutOfOrderPipeline([Segment] LeafSegment leaf, [Segment] RootSegment root) : IPipeline<int, LeafResult>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.OutOfOrderPipeline")!;
+        var leaf = Activator.CreateInstance(assembly.GetType("Sample.LeafSegment")!)!;
+        var root = Activator.CreateInstance(assembly.GetType("Sample.RootSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, leaf, root)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task)method.Invoke(pipeline, [10, CancellationToken.None])!;
+
+        await task;
+
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        var value = (int)result.GetType().GetProperty("Value")!.GetValue(result)!;
+
+        Assert.Equal(11, value);
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenSegmentMethodIsNotStatic()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class BadPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            {
+                [Segment]
+                private string NotStatic(int value) => value.ToString();
+            }
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE012");
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenSegmentMethodDoesNotReturnAValue()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class BadPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            {
+                [Segment]
+                private static void NoReturn(int value) { }
+            }
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE013");
+    }
+
     private static void AssertSingleDiagnostic(string source, string expectedId)
     {
         var result = RunGenerator(source);

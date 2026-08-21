@@ -20,8 +20,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var segmentParameters = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 SegmentAttributeFullName,
-                predicate: static (node, _) => node is ParameterSyntax,
-                transform: static (ctx, _) => GetSegmentParameter(ctx)
+                predicate: static (node, _) => node is ParameterSyntax or MethodDeclarationSyntax,
+                transform: static (ctx, _) => ctx.TargetNode is MethodDeclarationSyntax ? GetSegmentMethod(ctx) : GetSegmentParameter(ctx)
             )
             .Where(static parameter => parameter is not null)
             .Select(static (parameter, _) => parameter!.Value)
@@ -126,7 +126,11 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             segmentInputsJoined,
             segmentResultTypeName,
             parameterLocation,
-            containingTypeLocation
+            containingTypeLocation,
+            IsStaticSegmentMethod: false,
+            StaticSegmentMethodProblem: StaticSegmentMethodProblem.None,
+            SegmentIsAsync: true,
+            SegmentAcceptsCancellationToken: true
         );
     }
 
@@ -136,6 +140,120 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         IPropertySymbol property => property.Type,
         _ => null
     };
+
+    private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context)
+    {
+        if (context.TargetSymbol is not IMethodSymbol { ContainingType: { } containingType } methodSymbol)
+        {
+            return null;
+        }
+
+        var methodLocation = context.TargetNode.GetLocation();
+        var containingTypeLocation = containingType.Locations.FirstOrDefault();
+
+        var isPartial = containingType.DeclaringSyntaxReferences
+            .Select(static reference => reference.GetSyntax())
+            .OfType<TypeDeclarationSyntax>()
+            .Any(static declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
+
+        var containingNamespace = containingType.ContainingNamespace.IsGlobalNamespace
+            ? string.Empty
+            : containingType.ContainingNamespace.ToDisplayString();
+
+        string? pipelineInputsJoined = null;
+        string? pipelineResultTypeName = null;
+
+        if (PipelineShapeResolver.TryGetPipelineShape(containingType, out var pipelineInputTypeNames, out var resolvedPipelineResultTypeName))
+        {
+            pipelineInputsJoined = string.Join(InputSeparator, pipelineInputTypeNames);
+            pipelineResultTypeName = resolvedPipelineResultTypeName;
+        }
+
+        var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial);
+
+        if (!methodSymbol.IsStatic)
+        {
+            return new SegmentParameterInfo(
+                containingTypeModel,
+                pipelineInputsJoined,
+                pipelineResultTypeName,
+                methodSymbol.Name,
+                "",
+                null,
+                false,
+                null,
+                null,
+                null,
+                methodLocation,
+                containingTypeLocation,
+                IsStaticSegmentMethod: true,
+                StaticSegmentMethodProblem: StaticSegmentMethodProblem.NotStatic,
+                SegmentIsAsync: false,
+                SegmentAcceptsCancellationToken: false
+            );
+        }
+
+        var parameters = methodSymbol.Parameters;
+        var acceptsCancellationToken = parameters.Length > 0
+            && parameters[parameters.Length - 1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.Threading.CancellationToken";
+
+        var dataParameters = acceptsCancellationToken ? parameters.RemoveAt(parameters.Length - 1) : parameters;
+        var segmentInputTypeNames = dataParameters.Select(static p => p.Type.ToDisplayString(PipelineShapeResolver.TypeNameFormat)).ToImmutableArray();
+
+        var isAsyncTask = methodSymbol.ReturnType is INamedTypeSymbol { Name: "Task", TypeArguments.Length: 1 } taskType
+            && taskType.ContainingNamespace.ToDisplayString() == "System.Threading.Tasks";
+
+        var returnsNothing =
+            methodSymbol.ReturnsVoid
+            || (methodSymbol.ReturnType is INamedTypeSymbol { Name: "Task", TypeArguments.Length: 0 } voidTask
+                && voidTask.ContainingNamespace.ToDisplayString() == "System.Threading.Tasks"
+            );
+
+        if (returnsNothing)
+        {
+            return new SegmentParameterInfo(
+                containingTypeModel,
+                pipelineInputsJoined,
+                pipelineResultTypeName,
+                methodSymbol.Name,
+                "",
+                null,
+                false,
+                null,
+                null,
+                null,
+                methodLocation,
+                containingTypeLocation,
+                IsStaticSegmentMethod: true,
+                StaticSegmentMethodProblem: StaticSegmentMethodProblem.NoReturnValue,
+                SegmentIsAsync: false,
+                SegmentAcceptsCancellationToken: false
+            );
+        }
+
+        var segmentResultTypeName = isAsyncTask
+            ? ((INamedTypeSymbol)methodSymbol.ReturnType).TypeArguments[0].ToDisplayString(PipelineShapeResolver.TypeNameFormat)
+            : methodSymbol.ReturnType.ToDisplayString(PipelineShapeResolver.TypeNameFormat);
+
+        return new SegmentParameterInfo(
+            containingTypeModel,
+            pipelineInputsJoined,
+            pipelineResultTypeName,
+            methodSymbol.Name,
+            "",
+            methodSymbol.Name,
+            false,
+            methodSymbol.Name,
+            string.Join(InputSeparator, segmentInputTypeNames),
+            segmentResultTypeName,
+            methodLocation,
+            containingTypeLocation,
+            IsStaticSegmentMethod: true,
+            StaticSegmentMethodProblem: StaticSegmentMethodProblem.None,
+            SegmentIsAsync: isAsyncTask,
+            SegmentAcceptsCancellationToken: acceptsCancellationToken
+        );
+    }
 
     private static bool Execute(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, SourceProductionContext context, bool hasActivitySource)
     {
@@ -172,6 +290,22 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         foreach (var parameter in parameters)
         {
+            if (parameter.IsStaticSegmentMethod)
+            {
+                if (parameter.StaticSegmentMethodProblem == StaticSegmentMethodProblem.NotStatic)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(SegmentMethodMustBeStatic, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
+                    hasErrors = true;
+                }
+                else if (parameter.StaticSegmentMethodProblem == StaticSegmentMethodProblem.NoReturnValue)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(SegmentMethodMustReturnAValue, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
+                    hasErrors = true;
+                }
+
+                continue;
+            }
+
             if (parameter.SegmentResultTypeName is null)
             {
                 context.ReportDiagnostic(Diagnostic.Create(SegmentTypeMustImplementPipelineSegment, parameter.ParameterLocation ?? Location.None, parameter.ParameterName));
@@ -200,7 +334,10 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                     ? ImmutableArray<string>.Empty
                     : p.SegmentInputTypeNamesJoined!.Split(new[] { InputSeparator }, StringSplitOptions.None).ToImmutableArray(),
                 p.SegmentResultTypeName!,
-                p.ParameterLocation
+                p.ParameterLocation,
+                p.IsStaticSegmentMethod,
+                p.SegmentIsAsync,
+                p.SegmentAcceptsCancellationToken
             ))
             .ToImmutableArray();
 
@@ -364,8 +501,47 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return reachable;
     }
 
+    private static ImmutableArray<SegmentModel> SortByDependency(ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies)
+    {
+        var byName = new Dictionary<string, SegmentModel>();
+        foreach (var segment in segments)
+        {
+            byName[segment.ParameterName] = segment;
+        }
+
+        var visited = new HashSet<string>();
+        var sorted = ImmutableArray.CreateBuilder<SegmentModel>(segments.Length);
+
+        void Visit(string parameterName)
+        {
+            if (!visited.Add(parameterName))
+            {
+                return;
+            }
+
+            foreach (var binding in dependencies[parameterName])
+            {
+                if (binding.SegmentParameterName is string providerName)
+                {
+                    Visit(providerName);
+                }
+            }
+
+            sorted.Add(byName[parameterName]);
+        }
+
+        foreach (var segment in segments)
+        {
+            Visit(segment.ParameterName);
+        }
+
+        return sorted.ToImmutable();
+    }
+
     private static string GenerateSource(TypeDeclarationModel containingType, ImmutableArray<string> pipelineInputTypeNames, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName, bool hasActivitySource)
     {
+        segments = SortByDependency(segments, dependencies);
+
         var builder = new StringBuilder()
             .AppendLine("// <auto-generated/>")
             .AppendLine("#nullable enable")
@@ -450,9 +626,14 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                     : $"await {binding.SegmentParameterName}Task.ConfigureAwait(false)");
             }
 
-            args.Add("linkedToken");
+            if (segment.AcceptsCancellationToken)
+            {
+                args.Add("linkedToken");
+            }
 
             var argList = string.Join(", ", args);
+            var invocation = segment.IsStaticMethod ? $"{segment.ValueAccessor}({argList})" : $"{segment.ValueAccessor}.ExecuteAsync({argList})";
+            var callExpression = segment.IsAsync ? $"await {invocation}.ConfigureAwait(false)" : invocation;
 
             if (hasActivitySource)
             {
@@ -465,7 +646,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                     .AppendLine($"            segmentActivity?.SetTag(\"dovetail.segment.type\", \"{segment.SegmentTypeName}\");")
                     .AppendLine("            try")
                     .AppendLine("            {")
-                    .AppendLine($"                return await {segment.ValueAccessor}.ExecuteAsync({argList}).ConfigureAwait(false);")
+                    .AppendLine($"                return {callExpression};")
                     .AppendLine("            }")
                     .AppendLine("            catch (global::System.Exception ex)")
                     .AppendLine("            {")
@@ -479,7 +660,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             {
                 builder
                     .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async() =>")
-                    .AppendLine($"            await {segment.ValueAccessor}.ExecuteAsync({argList}).ConfigureAwait(false);")
+                    .AppendLine($"            {callExpression};")
                     .AppendLine();
             }
         }
