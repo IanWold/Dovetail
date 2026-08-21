@@ -11,7 +11,7 @@ Dovetail
 
 A source generator for implementing asynchronous pipelines of any complexity.
 
-[Quickstart](#quickstart) • [Detailed Explanation](#detailed-explanation) • [Diagnostics](#diagnostics)
+[Quickstart](#quickstart) • [Detailed Explanation](#detailed-explanation) • [Diagnostics](#diagnostics) • [Example App](Dovetail.Example)
 
 </div>
 

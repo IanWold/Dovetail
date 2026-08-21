@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Dovetail.Example": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "applicationUrl": "http://localhost:5080"
+    }
+  }
+}
