@@ -83,10 +83,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             backingMemberAmbiguous = matchingMembers.Length > 1;
         }
 
-        var isPartial = containingType.DeclaringSyntaxReferences
-            .Select(static reference => reference.GetSyntax())
-            .OfType<TypeDeclarationSyntax>()
-            .Any(static declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
+        var (isPartial, ownKeyword) = GetPartialityAndKeyword(containingType);
 
         var containingNamespace = containingType.ContainingNamespace.IsGlobalNamespace
             ? string.Empty
@@ -115,7 +112,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         return new SegmentParameterInfo(
-            new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType)),
+            new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType), ownKeyword),
             pipelineInputsJoined,
             pipelineResultTypeName,
             parameterSymbol.Name,
@@ -175,6 +172,19 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
     private static string GetTypeParameterList(INamedTypeSymbol type) =>
         type.Arity == 0 ? "" : $"<{string.Join(", ", type.TypeParameters.Select(static t => t.Name))}>";
 
+    private static (bool IsPartial, string Keyword) GetPartialityAndKeyword(INamedTypeSymbol type)
+    {
+        var declarations = type.DeclaringSyntaxReferences
+            .Select(static reference => reference.GetSyntax())
+            .OfType<TypeDeclarationSyntax>()
+            .ToImmutableArray();
+
+        var isPartial = declarations.Any(static declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
+        var keyword = declarations.Length > 0 ? GetTypeKindKeyword(declarations[0]) : "class";
+
+        return (isPartial, keyword);
+    }
+
     private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context)
     {
         if (context.TargetSymbol is not IMethodSymbol { ContainingType: { } containingType } methodSymbol)
@@ -185,10 +195,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var methodLocation = context.TargetNode.GetLocation();
         var containingTypeLocation = containingType.Locations.FirstOrDefault();
 
-        var isPartial = containingType.DeclaringSyntaxReferences
-            .Select(static reference => reference.GetSyntax())
-            .OfType<TypeDeclarationSyntax>()
-            .Any(static declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
+        var (isPartial, ownKeyword) = GetPartialityAndKeyword(containingType);
 
         var containingNamespace = containingType.ContainingNamespace.IsGlobalNamespace
             ? string.Empty
@@ -203,7 +210,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             pipelineResultTypeName = resolvedPipelineResultTypeName;
         }
 
-        var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType));
+        var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType), ownKeyword);
 
         if (!methodSymbol.IsStatic)
         {
@@ -616,7 +623,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             : containingType.Name) + containingType.TypeParameterList;
 
         builder
-            .AppendLine($"partial class {containingType.Name}{containingType.TypeParameterList}")
+            .AppendLine($"partial {containingType.Keyword} {containingType.Name}{containingType.TypeParameterList}")
             .AppendLine("{")
             .AppendLine($"    public async global::System.Threading.Tasks.Task<{pipelineResultTypeName}> ExecuteAsync({inputParameter}global::System.Threading.CancellationToken token)")
             .AppendLine("    {");
@@ -632,6 +639,21 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         builder.AppendLine("        using var cts = global::System.Threading.CancellationTokenSource.CreateLinkedTokenSource(token);")
             .AppendLine("        var linkedToken = cts.Token;")
             .AppendLine();
+
+        var isValueTypePipeline = containingType.Keyword is "struct" or "record struct";
+
+        if (isValueTypePipeline)
+        {
+            foreach (var segment in segments)
+            {
+                if (!segment.IsStaticMethod)
+                {
+                    builder.AppendLine($"        var {segment.ParameterName}_ = {segment.ValueAccessor};");
+                }
+            }
+
+            builder.AppendLine();
+        }
 
         foreach (var segment in segments)
         {
@@ -688,7 +710,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             }
 
             var argList = string.Join(", ", args);
-            var invocation = segment.IsStaticMethod ? $"{segment.ValueAccessor}({argList})" : $"{segment.ValueAccessor}.ExecuteAsync({argList})";
+            var invocationTarget = isValueTypePipeline && !segment.IsStaticMethod ? $"{segment.ParameterName}_" : segment.ValueAccessor;
+            var invocation = segment.IsStaticMethod ? $"{invocationTarget}({argList})" : $"{invocationTarget}.ExecuteAsync({argList})";
             var callExpression = segment.IsAsync ? $"await {invocation}.ConfigureAwait(false)" : invocation;
 
             if (hasActivitySource)
