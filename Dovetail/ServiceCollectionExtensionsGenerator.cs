@@ -11,6 +11,7 @@ namespace Dovetail;
 internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerator
 {
     private const string ServiceCollectionMetadataName = "Microsoft.Extensions.DependencyInjection.IServiceCollection";
+    private const string InterfaceSeparator = "\x1f";
 
     internal const string RegisteredTypesTrackingName = "RegisteredTypes";
 
@@ -45,15 +46,19 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
                 return;
             }
 
-            var segmentsByInterface = distinctTypes
-                .Where(static t => !t.IsPipeline && t.SegmentInterfaceTypeName is not null)
-                .ToLookup(static t => t.SegmentInterfaceTypeName);
+            var segmentInterfacePairs = distinctTypes
+                .Where(static t => !t.IsPipeline && t.SegmentInterfaceTypeNamesJoined is not null)
+                .SelectMany(static t => t.SegmentInterfaceTypeNamesJoined!
+                    .Split(new[] { InterfaceSeparator }, StringSplitOptions.None)
+                    .Select(interfaceTypeName => (Segment: t, InterfaceTypeName: interfaceTypeName))
+                )
+                .ToImmutableArray();
 
             var hasErrors = false;
-            foreach (var duplicates in segmentsByInterface.Where(static g => g.Count() > 1))
+            foreach (var duplicates in segmentInterfacePairs.ToLookup(static p => p.InterfaceTypeName).Where(static g => g.Count() > 1))
             {
-                var names = string.Join(", ", duplicates.Select(static t => $"'{t.FullyQualifiedName}'"));
-                var location = duplicates.Select(static t => t.Location).FirstOrDefault(static l => l is not null) ?? Location.None;
+                var names = string.Join(", ", duplicates.Select(static p => $"'{p.Segment.FullyQualifiedName}'"));
+                var location = duplicates.Select(static p => p.Segment.Location).FirstOrDefault(static l => l is not null) ?? Location.None;
 
                 spc.ReportDiagnostic(Diagnostic.Create(DuplicateSegmentInterfaceImplementation, location, names, duplicates.Key));
                 hasErrors = true;
@@ -79,18 +84,19 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         var lifetime = GetLifetime(symbol);
         var location = symbol.Locations.FirstOrDefault();
 
-        if (PipelineShapeResolver.TryGetSegmentShape(symbol, out _, out _))
+        var segmentInterfaces = PipelineShapeResolver.GetSegmentInterfaces(symbol);
+        if (segmentInterfaces.Length > 0)
         {
-            string? interfaceTypeName = symbol.Arity == 0 && PipelineShapeResolver.TryGetSegmentInterface(symbol, out var resolvedInterfaceTypeName)
-                ? resolvedInterfaceTypeName
+            var interfaceTypeNamesJoined = symbol.Arity == 0
+                ? string.Join(InterfaceSeparator, segmentInterfaces)
                 : null;
 
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false, symbol.Arity, symbol.IsValueType, lifetime, interfaceTypeName, location);
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false, symbol.Arity, symbol.IsValueType, lifetime, interfaceTypeNamesJoined, location);
         }
 
         if (PipelineShapeResolver.TryGetPipelineShape(symbol, out _, out _))
         {
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true, symbol.Arity, symbol.IsValueType, lifetime, SegmentInterfaceTypeName: null, location);
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true, symbol.Arity, symbol.IsValueType, lifetime, SegmentInterfaceTypeNamesJoined: null, location);
         }
 
         return null;
@@ -134,9 +140,12 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         {
             builder.AppendLine($"        {GetRegistrationExpression(segment)};");
 
-            if (segment.SegmentInterfaceTypeName is { } interfaceTypeName)
+            if (segment.SegmentInterfaceTypeNamesJoined is { } interfaceTypeNamesJoined)
             {
-                builder.AppendLine($"        {GetInterfaceForwardingExpression(segment, interfaceTypeName)};");
+                foreach (var interfaceTypeName in interfaceTypeNamesJoined.Split(new[] { InterfaceSeparator }, StringSplitOptions.None))
+                {
+                    builder.AppendLine($"        {GetInterfaceForwardingExpression(segment, interfaceTypeName)};");
+                }
             }
         }
 

@@ -188,7 +188,7 @@ public class ExpensiveClientSegment(ExpensiveClient client) : IPipelineSegment<R
 }
 ```
 
-Each non-generic segment is also registered against the specific `IPipelineSegment<...>` interface it implements, so it resolves whether a pipeline asks for it by its concrete type or by that interface. Generic segments are registered by concrete type only, since there's no way to express a DI service type that mixes closed and open type arguments.
+Each non-generic segment is also registered against every `IPipelineSegment<...>` interface it implements, so it resolves whether a pipeline asks for it by its concrete type or by any of those interfaces — a segment implementing more than one `IPipelineSegment<...>` interface (each with its own shape) is registered against each of them. Generic segments are registered by concrete type only, since there's no way to express a DI service type that mixes closed and open type arguments.
 
 If two segments implement the exact same `IPipelineSegment<...>` interface, `AddPipelines()` wouldn't know which one to use for that interface, so this is a compile error (DOVE017).
 
@@ -389,7 +389,7 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 |---|---|
 | DOVE001 | The pipeline type must be `partial`. |
 | DOVE002 | The pipeline type must implement exactly one `IPipeline<...>` interface. |
-| DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface. |
+| DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface — if its concrete type implements more than one, type the parameter as the specific interface instead. |
 | DOVE004 | No segment produces the pipeline's result type. |
 | DOVE005 | Two or more segments produce the same type. |
 | DOVE006 | A segment's input isn't produced by any other segment or one of the pipeline's own input types. |

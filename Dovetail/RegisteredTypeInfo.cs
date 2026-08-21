@@ -9,6 +9,6 @@ internal readonly record struct RegisteredTypeInfo(
     int Arity,
     bool IsValueType,
     ServiceLifetime Lifetime,
-    string? SegmentInterfaceTypeName,
+    string? SegmentInterfaceTypeNamesJoined,
     Location? Location
 );

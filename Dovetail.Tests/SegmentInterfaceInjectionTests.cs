@@ -144,4 +144,40 @@ public class SegmentInterfaceInjectionTests
 
         Assert.Equal("42", result);
     }
+
+    [Fact]
+    public async Task GeneratedPipeline_ForSegmentImplementingMultipleInterfaces_ProducesCorrectResult()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class MultiSegment : IPipelineSegment<int, string>, IPipelineSegment<bool, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult($"int:{value}");
+                public Task<string> ExecuteAsync(bool value, CancellationToken ct) => Task.FromResult($"bool:{value}");
+            }
+
+            public partial class FooPipeline([Segment] IPipelineSegment<int, string> foo) : IPipeline<int, string>;
+            """;
+
+        var result = RunGenerator(source);
+        
+        Assert.Empty(result.Diagnostics);
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.FooPipeline")!;
+        var foo = Activator.CreateInstance(assembly.GetType("Sample.MultiSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, foo)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(pipeline, [21, CancellationToken.None])!;
+        var resultValue = await task;
+
+        Assert.Equal("int:21", resultValue);
+    }
 }

@@ -25,7 +25,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor SegmentTypeMustImplementPipelineSegment = new(
         id: "DOVE003",
         title: "Segment type must implement IPipelineSegment",
-        messageFormat: "The type of [Segment] parameter '{0}' must implement exactly one IPipelineSegment<...> interface",
+        messageFormat: "The type of [Segment] parameter '{0}' must implement exactly one IPipelineSegment<...> interface; if its concrete type implements more than one, type the parameter as the specific interface you mean instead",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true

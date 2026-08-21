@@ -491,4 +491,75 @@ public class DependencyInjectionGeneratorTests
 
         Assert.Same(byConcreteType, byInterface);
     }
+
+    [Fact]
+    public void EmitsAddPipelines_RegisteringSegmentAgainstEachInterfaceItImplements()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class MultiSegment : IPipelineSegment<int, string>, IPipelineSegment<bool, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+                public Task<string> ExecuteAsync(bool value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+            """;
+
+        var result = RunServiceCollectionGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        var generated = Assert.Single(result.GeneratedTrees);
+        var text = generated.GetText(TestContext.Current.CancellationToken).ToString();
+
+        Assert.Contains("services.AddTransient<global::Sample.MultiSegment>();", text);
+        Assert.Contains("services.AddTransient<global::Dovetail.IPipelineSegment<int, string>>(sp => sp.GetRequiredService<global::Sample.MultiSegment>());", text);
+        Assert.Contains("services.AddTransient<global::Dovetail.IPipelineSegment<bool, string>>(sp => sp.GetRequiredService<global::Sample.MultiSegment>());", text);
+    }
+
+    [Fact]
+    public async Task AddPipelines_ResolvesAMultiInterfaceSegment_ByEitherInterface()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class MultiSegment : IPipelineSegment<int, string>, IPipelineSegment<bool, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult($"int:{value}");
+                public Task<string> ExecuteAsync(bool value, CancellationToken ct) => Task.FromResult($"bool:{value}");
+            }
+
+            public partial class IntPipeline([Segment] IPipelineSegment<int, string> segment) : IPipeline<int, string>;
+            public partial class BoolPipeline([Segment] IPipelineSegment<bool, string> segment) : IPipeline<bool, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator(), new ServiceCollectionExtensionsGenerator());
+
+        var services = new ServiceCollection();
+        var extensionsType = assembly.GetType("Microsoft.Extensions.DependencyInjection.DovetailServiceCollectionExtensions")!;
+        
+        extensionsType.GetMethod("AddPipelines")!.Invoke(null, [services]);
+
+        var provider = services.BuildServiceProvider();
+
+        var intPipelineType = assembly.GetType("Sample.IntPipeline")!;
+        var intPipeline = provider.GetRequiredService(intPipelineType);
+        var intResult = await (Task<string>)intPipelineType.GetMethod("ExecuteAsync")!.Invoke(intPipeline, [21, CancellationToken.None])!;
+
+        var boolPipelineType = assembly.GetType("Sample.BoolPipeline")!;
+        var boolPipeline = provider.GetRequiredService(boolPipelineType);
+        var boolResult = await (Task<string>)boolPipelineType.GetMethod("ExecuteAsync")!.Invoke(boolPipeline, [true, CancellationToken.None])!;
+
+        Assert.Equal("int:21", intResult);
+        Assert.Equal("bool:True", boolResult);
+    }
 }
