@@ -383,8 +383,6 @@ public class ItemPriceSegmentTests
 
 ## Diagnostics
 
-Dovetail validates the segment graph at compile time and reports one of the following instead of generating broken code:
-
 | ID | Meaning |
 |---|---|
 | DOVE001 | The pipeline type must be `partial`. |
