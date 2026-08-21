@@ -260,6 +260,32 @@ public class StaticSegmentMethodTests
     }
 
     [Fact]
+    public void ReportsDiagnostic_WhenSegmentMethodHasItsOwnTypeParameters()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class BadPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            {
+                [Segment]
+                private static T2 Convert<T1, T2>(T1 value) => default!;
+            }
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE016");
+    }
+
+    [Fact]
     public async Task GeneratedPipeline_ForStaticMethodSegment_AggregatesMoreThanEightInputs()
     {
         const string source = """

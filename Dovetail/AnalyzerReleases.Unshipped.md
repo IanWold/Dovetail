@@ -20,3 +20,4 @@ DOVE012 | Dovetail.SourceGenerator | Error | A [Segment] method must be static
 DOVE013 | Dovetail.SourceGenerator | Error | A [Segment] method must return a value
 DOVE014 | Dovetail.SourceGenerator | Error | An ancestor of a nested pipeline type must be partial
 DOVE015 | Dovetail.SourceGenerator | Error | A pipeline can't be nested inside a generic type
+DOVE016 | Dovetail.SourceGenerator | Error | A [Segment] method can't have its own type parameters

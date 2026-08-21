@@ -4,5 +4,6 @@ internal enum StaticSegmentMethodProblem
 {
     None,
     NotStatic,
-    NoReturnValue
+    NoReturnValue,
+    HasOwnTypeParameters
 }
