@@ -14,3 +14,5 @@ DOVE006 | Dovetail.SourceGenerator | Error | Segment dependency could not be res
 DOVE007 | Dovetail.SourceGenerator | Error | Segment dependency cycle detected
 DOVE008 | Dovetail.SourceGenerator | Error | Segment is unreachable from the pipeline result
 DOVE009 | Dovetail.SourceGenerator | Error | The pipeline declares the same input type more than once
+DOVE010 | Dovetail.SourceGenerator | Error | Segment parameter's backing field or property could not be determined
+DOVE011 | Dovetail.SourceGenerator | Error | Segment parameter's backing field or property is ambiguous

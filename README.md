@@ -156,6 +156,26 @@ public partial class ItemPipeline
 
 (Simplified for readability — the generator fully qualifies every type it emits.)
 
+### Constructors
+
+Both primary and conventional constructors work:
+
+```csharp
+public partial class ItemPipeline : IPipeline<int, ItemModel>
+{
+    private readonly ItemInfoSegment _info;
+    private readonly ItemPriceSegment _price;
+
+    public ItemPipeline([Segment] ItemInfoSegment info, [Segment] ItemPriceSegment price)
+    {
+        _info = info;
+        _price = price;
+    }
+}
+```
+
+Here, Dovetail resolves each `[Segment]` parameter's value by finding the one field or property on the type whose declared type matches the parameter's: `_info` and `_price` above, regardless of their names. If no member matches, or more than one does, that's a compile error (DOVE010/DOVE011) rather than something you'd discover at runtime, so name your backing members however you like.
+
 ### Dependency Injection
 
 If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
@@ -279,3 +299,5 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | DOVE007 | The segments form a dependency cycle. |
 | DOVE008 | A segment's result is never used, directly or transitively, by the segment producing the pipeline's result. |
 | DOVE009 | The pipeline declares the same input type more than once. |
+| DOVE010 | A `[Segment]` parameter on a non-primary constructor has no field or property of its type to read its value from. |
+| DOVE011 | A `[Segment]` parameter on a non-primary constructor has more than one field or property of its type — Dovetail can't tell which one to use. |

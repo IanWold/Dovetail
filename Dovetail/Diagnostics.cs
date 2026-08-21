@@ -84,4 +84,22 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor SegmentBackingMemberNotFound = new(
+        id: "DOVE010",
+        title: "Segment parameter's backing field or property could not be determined",
+        messageFormat: "'{0}' declares [Segment] parameter '{1}' on a constructor that is not a primary constructor, but has no field or property of type {2} to read its value from; use a primary constructor, or add exactly one field or property of that type",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    internal static readonly DiagnosticDescriptor AmbiguousSegmentBackingMember = new(
+        id: "DOVE011",
+        title: "Segment parameter's backing field or property is ambiguous",
+        messageFormat: "'{0}' declares [Segment] parameter '{1}' on a constructor that is not a primary constructor, and has more than one field or property of type {2}; Dovetail can't tell which one holds the segment's value, so use a primary constructor, or ensure only one field or property has that type",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

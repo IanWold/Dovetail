@@ -61,6 +61,28 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var parameterLocation = context.TargetNode.GetLocation();
         var containingTypeLocation = containingType.Locations.FirstOrDefault();
 
+        var parameterSyntax = (ParameterSyntax)context.TargetNode;
+        var isPrimaryConstructorParameter = parameterSyntax.Parent?.Parent is TypeDeclarationSyntax;
+        var parameterTypeName = parameterSymbol.Type.ToDisplayString(PipelineShapeResolver.DisplayNameFormat);
+
+        string? valueAccessor;
+        var backingMemberAmbiguous = false;
+
+        if (isPrimaryConstructorParameter)
+        {
+            valueAccessor = parameterSymbol.Name;
+        }
+        else
+        {
+            var matchingMembers = containingType.GetMembers()
+                .Where(static member => !member.IsStatic && !member.IsImplicitlyDeclared)
+                .Where(member => GetMemberType(member) is { } memberType && SymbolEqualityComparer.Default.Equals(memberType, parameterSymbol.Type))
+                .ToImmutableArray();
+
+            valueAccessor = matchingMembers.Length == 1 ? matchingMembers[0].Name : null;
+            backingMemberAmbiguous = matchingMembers.Length > 1;
+        }
+
         var isPartial = containingType.DeclaringSyntaxReferences
             .Select(static reference => reference.GetSyntax())
             .OfType<TypeDeclarationSyntax>()
@@ -97,6 +119,9 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             pipelineInputsJoined,
             pipelineResultTypeName,
             parameterSymbol.Name,
+            parameterTypeName,
+            valueAccessor,
+            backingMemberAmbiguous,
             segmentTypeName,
             segmentInputsJoined,
             segmentResultTypeName,
@@ -104,6 +129,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             containingTypeLocation
         );
     }
+
+    private static ITypeSymbol? GetMemberType(ISymbol member) => member switch
+    {
+        IFieldSymbol field => field.Type,
+        IPropertySymbol property => property.Type,
+        _ => null
+    };
 
     private static bool Execute(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, SourceProductionContext context, bool hasActivitySource)
     {
@@ -145,6 +177,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 context.ReportDiagnostic(Diagnostic.Create(SegmentTypeMustImplementPipelineSegment, parameter.ParameterLocation ?? Location.None, parameter.ParameterName));
                 hasErrors = true;
             }
+
+            if (parameter.ValueAccessor is null)
+            {
+                var descriptor = parameter.BackingMemberAmbiguous ? AmbiguousSegmentBackingMember : SegmentBackingMemberNotFound;
+                context.ReportDiagnostic(Diagnostic.Create(descriptor, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName, parameter.ParameterTypeName));
+                hasErrors = true;
+            }
         }
 
         if (hasErrors)
@@ -155,6 +194,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var segments = parameters
             .Select(static p => new SegmentModel(
                 p.ParameterName,
+                p.ValueAccessor!,
                 p.SegmentTypeName!,
                 string.IsNullOrEmpty(p.SegmentInputTypeNamesJoined)
                     ? ImmutableArray<string>.Empty
@@ -425,7 +465,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                     .AppendLine($"            segmentActivity?.SetTag(\"dovetail.segment.type\", \"{segment.SegmentTypeName}\");")
                     .AppendLine("            try")
                     .AppendLine("            {")
-                    .AppendLine($"                return await {segment.ParameterName}.ExecuteAsync({argList}).ConfigureAwait(false);")
+                    .AppendLine($"                return await {segment.ValueAccessor}.ExecuteAsync({argList}).ConfigureAwait(false);")
                     .AppendLine("            }")
                     .AppendLine("            catch (global::System.Exception ex)")
                     .AppendLine("            {")
@@ -439,7 +479,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             {
                 builder
                     .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async() =>")
-                    .AppendLine($"            await {segment.ParameterName}.ExecuteAsync({argList}).ConfigureAwait(false);")
+                    .AppendLine($"            await {segment.ValueAccessor}.ExecuteAsync({argList}).ConfigureAwait(false);")
                     .AppendLine();
             }
         }

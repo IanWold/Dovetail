@@ -5,6 +5,7 @@ namespace Dovetail;
 
 internal readonly record struct SegmentModel(
     string ParameterName,
+    string ValueAccessor,
     string SegmentTypeName,
     ImmutableArray<string> InputTypeNames,
     string ResultTypeName,
