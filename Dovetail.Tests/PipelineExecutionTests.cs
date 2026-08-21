@@ -152,6 +152,59 @@ public class PipelineExecutionTests
     }
 
     [Fact]
+    public async Task GeneratedPipeline_PropagatesCancellation_WhenTokenIsAlreadyCancelled()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct Doubled(int Value);
+
+            public class DoubleSegment : IPipelineSegment<int, Doubled>
+            {
+                public Task<Doubled> ExecuteAsync(int value, CancellationToken ct)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(new Doubled(value * 2));
+                }
+            }
+
+            public class ToStringSegment : IPipelineSegment<Doubled, string>
+            {
+                public Task<string> ExecuteAsync(Doubled value, CancellationToken ct)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(value.Value.ToString());
+                }
+            }
+
+            public partial class NumberPipeline(
+                [Segment] DoubleSegment doubler,
+                [Segment] ToStringSegment stringifier
+            ) : IPipeline<int, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.NumberPipeline")!;
+        var doubler = Activator.CreateInstance(assembly.GetType("Sample.DoubleSegment")!)!;
+        var stringifier = Activator.CreateInstance(assembly.GetType("Sample.ToStringSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, doubler, stringifier)!;
+
+        using var cts = new CancellationTokenSource();
+        
+        cts.Cancel();
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(pipeline, [21, cts.Token])!;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+    }
+
+    [Fact]
     public async Task GeneratedPipeline_ResolvesCorrectly_WhenSegmentsAreDeclaredOutOfDependencyOrder()
     {
         const string source = """
