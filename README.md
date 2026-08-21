@@ -389,7 +389,7 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 |---|---|
 | DOVE001 | The pipeline type must be `partial`. |
 | DOVE002 | The pipeline type must implement exactly one `IPipeline<...>` interface. |
-| DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface — if its concrete type implements more than one, type the parameter as the specific interface instead. |
+| DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface; if its concrete type implements more than one, type the parameter as the specific interface instead. |
 | DOVE004 | No segment produces the pipeline's result type. |
 | DOVE005 | Two or more segments produce the same type. |
 | DOVE006 | A segment's input isn't produced by any other segment or one of the pipeline's own input types. |
