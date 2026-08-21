@@ -156,6 +156,26 @@ public partial class ItemPipeline
 
 (Simplified for readability — the generator fully qualifies every type it emits.)
 
+### Dependency Injection
+
+If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
+
+```csharp
+services.AddPipelines();
+```
+
+This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
+
+```csharp
+public class ItemsController(ItemPipeline pipeline)
+{
+    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
+        pipeline.ExecuteAsync(itemId, ct);
+}
+```
+
+`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
+
 ### Constructors
 
 Both primary and conventional constructors work:
@@ -176,25 +196,59 @@ public partial class ItemPipeline : IPipeline<int, ItemModel>
 
 Here, Dovetail resolves each `[Segment]` parameter's value by finding the one field or property on the type whose declared type matches the parameter's: `_info` and `_price` above, regardless of their names. If no member matches, or more than one does, that's a compile error (DOVE010/DOVE011) rather than something you'd discover at runtime, so name your backing members however you like.
 
-### Dependency Injection
+### Static Segment Methods
 
-If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
-
-```csharp
-services.AddPipelines();
-```
-
-This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
+Dovetail supports static methods in the pipeline class being used as segments:
 
 ```csharp
-public class ItemsController(ItemPipeline pipeline)
+public partial class MyPipeline : IPipeline<int, string>
 {
-    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
-        pipeline.ExecuteAsync(itemId, ct);
+    [Segment]
+    private static string Stringify(int num) => num.ToString();
 }
 ```
 
-`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
+While `ISegment` only supports up to eight inputs, static segment methods support any number of inputs. This can be a particular benefit when aggregating all of the segment results into the final pipeline output (also sparing the need for a dangling "Assembler" segment):
+
+```csharp
+public partial class ItemPipeline(
+    [Segment] ItemInfoSegment info,
+    [Segment] ItemPriceSegment price,
+    [Segment] ItemImagesSegment images
+) : IPipeline<int, ItemModel>
+{
+    [Segment]
+    private static ItemModel Aggregate(ItemInfo itemResult, ItemPrice priceResult, ItemImages imagesResult) =>
+        new ItemModel(itemResult, priceResult, imagesResult);
+}
+```
+
+This also supports cases where it would be cumbersome to create a segment class for simple data transformations in the middle of a pipeline run:
+
+```csharp
+public record OrderInfo(OrderId OrderId, CustomerId CustomerId, ...);
+
+public class OrderSegment : ISegment<OrderId, OrderInfo> { ... }
+public class CustomerSegment : ISegment<CustomerId, CustomerInfo> { ... }
+
+public partial class OrderPipeline(
+    [Segment] OrderSegment order,
+    [Segment] CustomerSegment customer
+)
+{
+    [Segment]
+    private static CustomerId OrderInfoToCustomerId(OrderInfo order) => order.CustomerId;
+}
+```
+
+A segment method can be `async` too, in which case it may take an optional trailing `CancellationToken`, exactly like a class-based segment:
+
+```csharp
+[Segment]
+private static async Task<Result> SomeSegment(Input input, CancellationToken ct) => await ...;
+```
+
+The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
 
 ### Chaining Pipelines
 
@@ -301,3 +355,5 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | DOVE009 | The pipeline declares the same input type more than once. |
 | DOVE010 | A `[Segment]` parameter on a non-primary constructor has no field or property of its type to read its value from. |
 | DOVE011 | A `[Segment]` parameter on a non-primary constructor has more than one field or property of its type — Dovetail can't tell which one to use. |
+| DOVE012 | A `[Segment]` method must be `static`. |
+| DOVE013 | A `[Segment]` method must return a value — either `TResult` or `Task<TResult>`. |

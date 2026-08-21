@@ -14,5 +14,9 @@ internal readonly record struct SegmentParameterInfo(
     string? SegmentInputTypeNamesJoined,
     string? SegmentResultTypeName,
     Location? ParameterLocation,
-    Location? ContainingTypeLocation
+    Location? ContainingTypeLocation,
+    bool IsStaticSegmentMethod,
+    StaticSegmentMethodProblem StaticSegmentMethodProblem,
+    bool SegmentIsAsync,
+    bool SegmentAcceptsCancellationToken
 );
