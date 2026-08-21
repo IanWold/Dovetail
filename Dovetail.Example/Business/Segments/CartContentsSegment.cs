@@ -2,8 +2,6 @@ using Dovetail.Example.Infrastructure;
 
 namespace Dovetail.Example.Business;
 
-// Needs both of the pipeline's own inputs directly — a real use of the
-// multi-arity IPipeline<T1, T2, TResult> matching, not just a single input.
 internal class CartContentsSegment(CartDataAccess carts) : IPipelineSegment<UserId, CartId, IReadOnlyList<CartLineItem>>
 {
     public async Task<IReadOnlyList<CartLineItem>> ExecuteAsync(UserId userId, CartId cartId, CancellationToken ct)

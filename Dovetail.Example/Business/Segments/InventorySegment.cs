@@ -2,11 +2,9 @@ using Dovetail.Example.Infrastructure;
 
 namespace Dovetail.Example.Business;
 
-// Sku 7's warehouse feed always times out. Rather than fail the whole product
-// page over a missing stock count, this catches it and degrades to "Unknown" —
-// the pattern documented in the README under Architectural Considerations.
-// The stock-level thresholds (what counts as "low") are a business rule, applied
-// here on top of the raw unit count Infrastructure returns.
+/// <summary>
+/// Sku 7's warehouse feed always times out. Rather than fail the whole product page over a missing stock count, this catches it and degrades to "Unknown".
+/// </summary>
 internal class InventorySegment(InventoryDataAccess inventory) : IPipelineSegment<Sku, InventoryStatus>
 {
     public async Task<InventoryStatus> ExecuteAsync(Sku sku, CancellationToken ct)

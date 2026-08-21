@@ -2,9 +2,10 @@ using System.Diagnostics;
 
 namespace Dovetail.Example.Infrastructure;
 
-// Dovetail only emits dovetail.pipeline / dovetail.segment / dovetail.segment.type
-// activities when something is actually listening — this is that something, printed
-// to the console instead of shipped to a real collector so the example stays offline.
+/// <summary>
+/// Dovetail only emits dovetail.pipeline, dovetail.segment, and dovetail.segment.type activities when something is actually listening.
+/// This is that something, printed to the console instead of shipped to a real collector so the example stays offline.
+/// </summary>
 internal static class Tracing
 {
     public static void Enable()

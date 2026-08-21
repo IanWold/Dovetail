@@ -2,8 +2,9 @@ using Dovetail;
 
 namespace Dovetail.Example.Business;
 
-// A real multi-level chain: OrderId -> OrderDetails -> (extracted) UserId -> CustomerProfile,
-// with CustomerProfilePipeline reused here as a whole nested segment.
+/// <summary>
+/// Demonstrates more complex scenario with a pipeline reused as a segment and static segment transforming order details to uesr id
+/// </summary>
 internal partial class OrderConfirmationPipeline(
     [Segment] OrderDetailsSegment order,
     [Segment] CustomerProfilePipeline customer,
@@ -12,7 +13,7 @@ internal partial class OrderConfirmationPipeline(
 ) : IPipeline<OrderId, OrderConfirmation>
 {
     [Segment]
-    private static UserId ExtractCustomerId(OrderDetails order) => order.UserId;
+    private static UserId OrderDetailsToUserId(OrderDetails order) => order.UserId;
 
     [Segment]
     private static OrderConfirmation Assemble(OrderDetails order, CustomerProfile customer, PaymentStatus payment, ShipmentTrackingInfo shipment) =>

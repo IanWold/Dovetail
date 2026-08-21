@@ -1,8 +1,5 @@
 namespace Dovetail.Example.Business;
 
-// Discounting is a business rule, not a data-access concern, so unlike its
-// neighbors here it has no Infrastructure dependency at all — it's pure
-// computation over a domain type Dovetail already has in hand.
 internal class PricingSegment : IPipelineSegment<ProductInfo, PricingInfo>
 {
     public Task<PricingInfo> ExecuteAsync(ProductInfo product, CancellationToken ct)

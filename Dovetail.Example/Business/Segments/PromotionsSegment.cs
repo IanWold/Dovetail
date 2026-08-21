@@ -1,10 +1,5 @@
 namespace Dovetail.Example.Business;
 
-// Promotion eligibility is a business rule computed entirely from data already
-// in hand (no Infrastructure dependency needed), same as PricingSegment and
-// ShippingEstimateSegment below. It still mixes a pipeline input (UserId) with
-// another segment's result (CartLineItems) in one parameter list — the two
-// dependency kinds DependencyBinding exists to tell apart.
 internal class PromotionsSegment : IPipelineSegment<UserId, IReadOnlyList<CartLineItem>, AppliedPromotions>
 {
     public Task<AppliedPromotions> ExecuteAsync(UserId userId, IReadOnlyList<CartLineItem> items, CancellationToken ct)
