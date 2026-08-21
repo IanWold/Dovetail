@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text;
+using Dovetail.DependencyInjection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -11,6 +12,9 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
     private const string ServiceCollectionMetadataName = "Microsoft.Extensions.DependencyInjection.IServiceCollection";
 
     internal const string RegisteredTypesTrackingName = "RegisteredTypes";
+
+    private static readonly SymbolDisplayFormat BaseNameFormat =
+        PipelineShapeResolver.TypeNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -46,24 +50,44 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
 
     private static RegisteredTypeInfo? GetCandidate(GeneratorSyntaxContext context)
     {
-        if (context.SemanticModel.GetDeclaredSymbol(context.Node) is not INamedTypeSymbol { TypeKind: TypeKind.Class, IsAbstract: false, Arity: 0 } symbol)
+        if (context.SemanticModel.GetDeclaredSymbol(context.Node) is not INamedTypeSymbol { IsAbstract: false, TypeKind: TypeKind.Class or TypeKind.Struct } symbol)
         {
             return null;
         }
 
-        var fullyQualifiedName = symbol.ToDisplayString(PipelineShapeResolver.TypeNameFormat);
+        var fullyQualifiedName = symbol.ToDisplayString(BaseNameFormat);
+        var lifetime = GetLifetime(symbol);
 
         if (PipelineShapeResolver.TryGetSegmentShape(symbol, out _, out _))
         {
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false);
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false, symbol.Arity, symbol.IsValueType, lifetime);
         }
 
         if (PipelineShapeResolver.TryGetPipelineShape(symbol, out _, out _))
         {
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true);
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true, symbol.Arity, symbol.IsValueType, lifetime);
         }
 
         return null;
+    }
+
+    private static ServiceLifetime GetLifetime(INamedTypeSymbol symbol)
+    {
+        foreach (var attribute in symbol.GetAttributes())
+        {
+            if (attribute.AttributeClass is not { Name: nameof(LifetimeAttribute) } attributeClass
+                || attributeClass.ContainingNamespace.ToDisplayString() != "Dovetail.DependencyInjection")
+            {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is int rawValue)
+            {
+                return (ServiceLifetime)rawValue;
+            }
+        }
+
+        return ServiceLifetime.Transient;
     }
 
     private static string GenerateSource(ImmutableArray<RegisteredTypeInfo> types)
@@ -76,18 +100,18 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
             .AppendLine()
             .AppendLine("public static class DovetailServiceCollectionExtensions")
             .AppendLine("{")
-            .AppendLine("    /// <summary>Registers every Dovetail pipeline segment and pipeline found in this compilation as transient services.</summary>")
+            .AppendLine("    /// <summary>Registers every Dovetail pipeline segment and pipeline found in this compilation, at the lifetime given by [Lifetime(...)] (transient by default).</summary>")
             .AppendLine("    public static IServiceCollection AddPipelines(this IServiceCollection services)")
             .AppendLine("    {");
 
         foreach (var segment in types.Where(static t => !t.IsPipeline).OrderBy(static t => t.FullyQualifiedName, StringComparer.Ordinal))
         {
-            builder.AppendLine($"        services.AddTransient<{segment.FullyQualifiedName}>();");
+            builder.AppendLine($"        {GetRegistrationExpression(segment)};");
         }
 
         foreach (var pipeline in types.Where(static t => t.IsPipeline).OrderBy(static t => t.FullyQualifiedName, StringComparer.Ordinal))
         {
-            builder.AppendLine($"        services.AddTransient<{pipeline.FullyQualifiedName}>();");
+            builder.AppendLine($"        {GetRegistrationExpression(pipeline)};");
         }
 
         builder.AppendLine("        return services;")
@@ -95,5 +119,28 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
             .AppendLine("}");
 
         return builder.ToString();
+    }
+
+    private static string GetRegistrationExpression(RegisteredTypeInfo type)
+    {
+        var methodName = type.Lifetime switch
+        {
+            ServiceLifetime.Singleton => "AddSingleton",
+            ServiceLifetime.Scoped => "AddScoped",
+            _ => "AddTransient"
+        };
+
+        // MEDI's generic-method overloads (AddTransient<TService>(), etc.) require TService : class,
+        // so value-type pipelines/segments must go through the Type-based overload too, not just open generics.
+        if (type.Arity == 0 && !type.IsValueType)
+        {
+            return $"services.{methodName}<{type.FullyQualifiedName}>()";
+        }
+
+        var typeExpression = type.Arity == 0
+            ? type.FullyQualifiedName
+            : $"{type.FullyQualifiedName}<{new string(',', type.Arity - 1)}>";
+
+        return $"services.{methodName}(typeof({typeExpression}), typeof({typeExpression}))";
     }
 }
