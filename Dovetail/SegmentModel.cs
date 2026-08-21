@@ -9,5 +9,8 @@ internal readonly record struct SegmentModel(
     string SegmentTypeName,
     ImmutableArray<string> InputTypeNames,
     string ResultTypeName,
-    Location? ParameterLocation
+    Location? ParameterLocation,
+    bool IsStaticMethod,
+    bool IsAsync,
+    bool AcceptsCancellationToken
 );
