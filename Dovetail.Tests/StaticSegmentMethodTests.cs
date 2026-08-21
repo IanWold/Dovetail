@@ -262,9 +262,6 @@ public class StaticSegmentMethodTests
     [Fact]
     public async Task GeneratedPipeline_ForStaticMethodSegment_AggregatesMoreThanEightInputs()
     {
-        // IPipelineSegment<T1..T8, TResult> tops out at 8 inputs, so a class-based assembler
-        // can't combine more than that. A static method has no such arity limit — this is
-        // the whole point of using one for the final aggregation step in a wide pipeline.
         const string source = """
             using System;
             using System.Threading;

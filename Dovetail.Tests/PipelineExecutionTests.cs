@@ -154,12 +154,6 @@ public class PipelineExecutionTests
     [Fact]
     public async Task GeneratedPipeline_ResolvesCorrectly_WhenSegmentsAreDeclaredOutOfDependencyOrder()
     {
-        // "leaf" is declared before "root" even though it depends on root's result. The
-        // generator must topologically sort its "var xTask = XAsync();" declarations rather
-        // than emitting them in raw declaration order, or leaf's task would call into root's
-        // task variable before it's assigned (CS0165) — this was always latently true, just
-        // never exercised because every prior test happened to declare segments in an
-        // already-dependency-first order.
         const string source = """
             using System;
             using System.Threading;

@@ -104,11 +104,6 @@ public class TracingTests
 
         var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
 
-        // Every test's dynamically-compiled assembly generates its own "Dovetail"-named
-        // ActivitySource, so filtering by name alone would also pick up unrelated pipelines
-        // from other tests running concurrently. Filtering by the exact instance this
-        // assembly created keeps the listener scoped to just this test regardless of what
-        // else is running.
         var dovetailActivitySource = (ActivitySource)assembly.GetType("Dovetail.DovetailActivitySource")!
             .GetField("Instance", BindingFlags.NonPublic | BindingFlags.Static)!
             .GetValue(null)!;
