@@ -25,7 +25,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor SegmentTypeMustImplementPipelineSegment = new(
         id: "DOVE003",
         title: "Segment type must implement IPipelineSegment",
-        messageFormat: "The type of [Segment] parameter '{0}' must implement exactly one IPipelineSegment<...> interface",
+        messageFormat: "The type of [Segment] parameter '{0}' must implement exactly one IPipelineSegment<...> interface; if its concrete type implements more than one, type the parameter as the specific interface you mean instead",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -143,6 +143,15 @@ internal static class Diagnostics
         id: "DOVE016",
         title: "A [Segment] method can't have its own type parameters",
         messageFormat: "'{0}' declares [Segment] on method '{1}', which has its own type parameters; a segment method can use the pipeline's type parameters, but can't introduce new ones of its own",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    internal static readonly DiagnosticDescriptor DuplicateSegmentInterfaceImplementation = new(
+        id: "DOVE017",
+        title: "More than one segment implements the same IPipelineSegment<...> interface",
+        messageFormat: "Segments {0} all implement '{1}'; AddPipelines() can't tell which one to register for that interface, so give each a distinct result type or inject them by their concrete type instead",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true

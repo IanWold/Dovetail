@@ -325,4 +325,241 @@ public class DependencyInjectionGeneratorTests
 
         Assert.Equal("Value: 21", result);
     }
+
+    [Fact]
+    public void EmitsAddPipelines_RegisteringSegmentAgainstItsInterface()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, string>;
+            """;
+
+        var result = RunServiceCollectionGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        
+        var generated = Assert.Single(result.GeneratedTrees);
+        var text = generated.GetText(TestContext.Current.CancellationToken).ToString();
+
+        Assert.Contains("services.AddTransient<global::Sample.FooSegment>();", text);
+        Assert.Contains("services.AddTransient<global::Dovetail.IPipelineSegment<int, string>>(sp => sp.GetRequiredService<global::Sample.FooSegment>());", text);
+    }
+
+    [Fact]
+    public void EmitsAddPipelines_DoesNotRegisterInterfaceForAGenericSegment()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class Wrapper<T> : IPipelineSegment<int, T>
+            {
+                private readonly T _value;
+                public Wrapper(T value) => _value = value;
+                public Task<T> ExecuteAsync(int input, CancellationToken ct) => Task.FromResult(_value);
+            }
+
+            public partial class MyPipeline<T>([Segment] Wrapper<T> wrapper) : IPipeline<int, T>;
+            """;
+
+        var result = RunServiceCollectionGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        
+        var generated = Assert.Single(result.GeneratedTrees);
+        var text = generated.GetText(TestContext.Current.CancellationToken).ToString();
+
+        Assert.Contains("services.AddTransient(typeof(global::Sample.Wrapper<>), typeof(global::Sample.Wrapper<>));", text);
+        Assert.DoesNotContain("IPipelineSegment", text);
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenTwoSegmentsImplementTheSameInterface()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public class BarSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+            """;
+
+        var result = RunServiceCollectionGenerator(source);
+
+        Assert.Empty(result.GeneratedTrees);
+        
+        var diagnostic = Assert.Single(result.Diagnostics);
+        
+        Assert.Equal("DOVE017", diagnostic.Id);
+    }
+
+    [Fact]
+    public async Task AddPipelines_ResolvesSegmentByItsInterface()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class FooPipeline([Segment] IPipelineSegment<int, string> foo) : IPipeline<int, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator(), new ServiceCollectionExtensionsGenerator());
+
+        var services = new ServiceCollection();
+        var extensionsType = assembly.GetType("Microsoft.Extensions.DependencyInjection.DovetailServiceCollectionExtensions")!;
+        
+        extensionsType.GetMethod("AddPipelines")!.Invoke(null, [services]);
+
+        var provider = services.BuildServiceProvider();
+        var pipelineType = assembly.GetType("Sample.FooPipeline")!;
+        var pipeline = provider.GetRequiredService(pipelineType);
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(pipeline, [21, CancellationToken.None])!;
+        var result = await task;
+
+        Assert.Equal("21", result);
+    }
+
+    [Fact]
+    public void AddPipelines_ResolvesSingletonSegment_AsTheSameInstanceByInterfaceAndConcreteType()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+            using Dovetail.DependencyInjection;
+
+            namespace Sample;
+
+            [Lifetime(ServiceLifetime.Singleton)]
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator(), new ServiceCollectionExtensionsGenerator());
+
+        var services = new ServiceCollection();
+        var extensionsType = assembly.GetType("Microsoft.Extensions.DependencyInjection.DovetailServiceCollectionExtensions")!;
+        
+        extensionsType.GetMethod("AddPipelines")!.Invoke(null, [services]);
+
+        var provider = services.BuildServiceProvider();
+        var concreteType = assembly.GetType("Sample.FooSegment")!;
+        var interfaceType = typeof(IPipelineSegment<,>).MakeGenericType(typeof(int), typeof(string));
+
+        var byConcreteType = provider.GetRequiredService(concreteType);
+        var byInterface = provider.GetRequiredService(interfaceType);
+
+        Assert.Same(byConcreteType, byInterface);
+    }
+
+    [Fact]
+    public void EmitsAddPipelines_RegisteringSegmentAgainstEachInterfaceItImplements()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class MultiSegment : IPipelineSegment<int, string>, IPipelineSegment<bool, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+                public Task<string> ExecuteAsync(bool value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+            """;
+
+        var result = RunServiceCollectionGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        var generated = Assert.Single(result.GeneratedTrees);
+        var text = generated.GetText(TestContext.Current.CancellationToken).ToString();
+
+        Assert.Contains("services.AddTransient<global::Sample.MultiSegment>();", text);
+        Assert.Contains("services.AddTransient<global::Dovetail.IPipelineSegment<int, string>>(sp => sp.GetRequiredService<global::Sample.MultiSegment>());", text);
+        Assert.Contains("services.AddTransient<global::Dovetail.IPipelineSegment<bool, string>>(sp => sp.GetRequiredService<global::Sample.MultiSegment>());", text);
+    }
+
+    [Fact]
+    public async Task AddPipelines_ResolvesAMultiInterfaceSegment_ByEitherInterface()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class MultiSegment : IPipelineSegment<int, string>, IPipelineSegment<bool, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult($"int:{value}");
+                public Task<string> ExecuteAsync(bool value, CancellationToken ct) => Task.FromResult($"bool:{value}");
+            }
+
+            public partial class IntPipeline([Segment] IPipelineSegment<int, string> segment) : IPipeline<int, string>;
+            public partial class BoolPipeline([Segment] IPipelineSegment<bool, string> segment) : IPipeline<bool, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator(), new ServiceCollectionExtensionsGenerator());
+
+        var services = new ServiceCollection();
+        var extensionsType = assembly.GetType("Microsoft.Extensions.DependencyInjection.DovetailServiceCollectionExtensions")!;
+        
+        extensionsType.GetMethod("AddPipelines")!.Invoke(null, [services]);
+
+        var provider = services.BuildServiceProvider();
+
+        var intPipelineType = assembly.GetType("Sample.IntPipeline")!;
+        var intPipeline = provider.GetRequiredService(intPipelineType);
+        var intResult = await (Task<string>)intPipelineType.GetMethod("ExecuteAsync")!.Invoke(intPipeline, [21, CancellationToken.None])!;
+
+        var boolPipelineType = assembly.GetType("Sample.BoolPipeline")!;
+        var boolPipeline = provider.GetRequiredService(boolPipelineType);
+        var boolResult = await (Task<string>)boolPipelineType.GetMethod("ExecuteAsync")!.Invoke(boolPipeline, [true, CancellationToken.None])!;
+
+        Assert.Equal("int:21", intResult);
+        Assert.Equal("bool:True", boolResult);
+    }
 }

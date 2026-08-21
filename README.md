@@ -188,6 +188,10 @@ public class ExpensiveClientSegment(ExpensiveClient client) : IPipelineSegment<R
 }
 ```
 
+Each non-generic segment is also registered against every `IPipelineSegment<...>` interface it implements, so it resolves whether a pipeline asks for it by its concrete type or by any of those interfaces — a segment implementing more than one `IPipelineSegment<...>` interface (each with its own shape) is registered against each of them. Generic segments are registered by concrete type only, since there's no way to express a DI service type that mixes closed and open type arguments.
+
+If two segments implement the exact same `IPipelineSegment<...>` interface, `AddPipelines()` wouldn't know which one to use for that interface, so this is a compile error (DOVE017).
+
 ### Constructors
 
 Both primary and conventional constructors work:
@@ -207,6 +211,15 @@ public partial class ItemPipeline : IPipeline<int, ItemModel>
 ```
 
 Here, Dovetail resolves each `[Segment]` parameter's value by finding the one field or property on the type whose declared type matches the parameter's: `_info` and `_price` above, regardless of their names. If no member matches, or more than one does, that's a compile error (DOVE010/DOVE011) rather than something you'd discover at runtime, so name your backing members however you like.
+
+A `[Segment]` parameter can also be typed as the segment's `IPipelineSegment<...>` interface instead of its concrete type:
+
+```csharp
+public partial class ItemPipeline(
+    [Segment] IPipelineSegment<int, ItemInfo> info,
+    [Segment] ItemPriceSegment price
+) : IPipeline<int, ItemModel>;
+```
 
 ### Static Segment Methods
 
@@ -376,7 +389,7 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 |---|---|
 | DOVE001 | The pipeline type must be `partial`. |
 | DOVE002 | The pipeline type must implement exactly one `IPipeline<...>` interface. |
-| DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface. |
+| DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface; if its concrete type implements more than one, type the parameter as the specific interface instead. |
 | DOVE004 | No segment produces the pipeline's result type. |
 | DOVE005 | Two or more segments produce the same type. |
 | DOVE006 | A segment's input isn't produced by any other segment or one of the pipeline's own input types. |
@@ -390,3 +403,4 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | DOVE014 | Every type containing a nested pipeline must be `partial`. |
 | DOVE015 | A pipeline can't be nested inside a generic type. |
 | DOVE016 | A `[Segment]` method can't have its own type parameters — it can use the pipeline's, but can't introduce new ones. |
+| DOVE017 | Two or more segments implement the same `IPipelineSegment<...>` interface, so `AddPipelines()` can't tell which one to register for it. |
