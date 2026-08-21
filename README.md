@@ -357,3 +357,5 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | DOVE011 | A `[Segment]` parameter on a non-primary constructor has more than one field or property of its type — Dovetail can't tell which one to use. |
 | DOVE012 | A `[Segment]` method must be `static`. |
 | DOVE013 | A `[Segment]` method must return a value — either `TResult` or `Task<TResult>`. |
+| DOVE014 | Every type containing a nested pipeline must be `partial`. |
+| DOVE015 | A pipeline can't be nested inside a generic type. |

@@ -120,4 +120,22 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor ContainingAncestorMustBePartial = new(
+        id: "DOVE014",
+        title: "An ancestor of a nested pipeline type must be partial",
+        messageFormat: "'{0}' is nested inside '{1}', which isn't partial; every type containing a pipeline must be partial for Dovetail to generate into it",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    internal static readonly DiagnosticDescriptor NestedInGenericType = new(
+        id: "DOVE015",
+        title: "A pipeline can't be nested inside a generic type",
+        messageFormat: "'{0}' is nested inside generic type '{1}'; Dovetail doesn't support generating into a pipeline nested inside a generic type",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

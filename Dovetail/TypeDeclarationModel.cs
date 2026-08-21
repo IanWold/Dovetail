@@ -1,7 +1,10 @@
+using System.Collections.Immutable;
+
 namespace Dovetail;
 
 internal readonly record struct TypeDeclarationModel(
     string Namespace,
     string Name,
-    bool IsPartial
+    bool IsPartial,
+    ImmutableArray<ContainingTypeModel> ContainingTypes
 );

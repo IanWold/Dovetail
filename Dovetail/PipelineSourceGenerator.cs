@@ -115,7 +115,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         return new SegmentParameterInfo(
-            new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial),
+            new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType)),
             pipelineInputsJoined,
             pipelineResultTypeName,
             parameterSymbol.Name,
@@ -139,6 +139,37 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         IFieldSymbol field => field.Type,
         IPropertySymbol property => property.Type,
         _ => null
+    };
+
+    private static ImmutableArray<ContainingTypeModel> GetContainingTypes(INamedTypeSymbol type)
+    {
+        var chain = new List<ContainingTypeModel>();
+        var current = type.ContainingType;
+
+        while (current is not null)
+        {
+            var syntax = current.DeclaringSyntaxReferences
+                .Select(static reference => reference.GetSyntax())
+                .OfType<TypeDeclarationSyntax>()
+                .FirstOrDefault();
+
+            var isPartial = syntax?.Modifiers.Any(SyntaxKind.PartialKeyword) ?? false;
+            var keyword = syntax is null ? "class" : GetTypeKindKeyword(syntax);
+
+            chain.Add(new ContainingTypeModel(current.Name, keyword, isPartial, current.Arity > 0));
+            current = current.ContainingType;
+        }
+
+        chain.Reverse();
+        return chain.ToImmutableArray();
+    }
+
+    private static string GetTypeKindKeyword(TypeDeclarationSyntax syntax) => syntax switch
+    {
+        RecordDeclarationSyntax record => record.ClassOrStructKeyword.IsKind(SyntaxKind.StructKeyword) ? "record struct" : "record",
+        StructDeclarationSyntax => "struct",
+        InterfaceDeclarationSyntax => "interface",
+        _ => "class"
     };
 
     private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context)
@@ -169,7 +200,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             pipelineResultTypeName = resolvedPipelineResultTypeName;
         }
 
-        var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial);
+        var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType));
 
         if (!methodSymbol.IsStatic)
         {
@@ -263,6 +294,21 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         {
             context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustBePartial, containingTypeLocation, containingType.Name));
             return false;
+        }
+
+        foreach (var ancestor in containingType.ContainingTypes)
+        {
+            if (ancestor.IsGeneric)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(NestedInGenericType, containingTypeLocation, containingType.Name, ancestor.Name));
+                return false;
+            }
+
+            if (!ancestor.IsPartial)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(ContainingAncestorMustBePartial, containingTypeLocation, containingType.Name, ancestor.Name));
+                return false;
+            }
         }
 
         var pipelineResultTypeName = parameters[0].PipelineResultTypeName;
@@ -552,6 +598,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             builder.AppendLine($"namespace {containingType.Namespace};").AppendLine();
         }
 
+        foreach (var ancestor in containingType.ContainingTypes)
+        {
+            builder
+                .AppendLine($"partial {ancestor.Keyword} {ancestor.Name}")
+                .AppendLine("{");
+        }
+
         var inputParameterList = string.Join(", ", pipelineInputTypeNames.Select(
             (typeName, index) => $"{typeName} {GetPipelineInputParameterName(index, pipelineInputTypeNames.Length)}"));
         var inputParameter = inputParameterList.Length == 0 ? "" : $"{inputParameterList}, ";
@@ -668,6 +721,11 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         builder
             .AppendLine("    }")
             .AppendLine("}");
+
+        for (var i = 0; i < containingType.ContainingTypes.Length; i++)
+        {
+            builder.AppendLine("}");
+        }
 
         return builder.ToString();
     }
