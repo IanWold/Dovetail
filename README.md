@@ -196,6 +196,20 @@ public partial class ItemPipeline : IPipeline<int, ItemModel>
 
 Here, Dovetail resolves each `[Segment]` parameter's value by finding the one field or property on the type whose declared type matches the parameter's: `_info` and `_price` above, regardless of their names. If no member matches, or more than one does, that's a compile error (DOVE010/DOVE011) rather than something you'd discover at runtime, so name your backing members however you like.
 
+### Generic Pipelines
+
+A pipeline can be generic, with segments parameterized by the same type:
+
+```csharp
+public class FirstSegment<T> : IPipelineSegment<Input, T> { ... }
+public class SecondSegment<T> : IPipelineSegment<T, Result> { ... }
+
+public partial class MyPipeline<T>(
+    [Segment] FirstSegment<T> first,
+    [Segment] SecondSegment<T> second
+) : IPipeline<Input, Result>;
+```
+
 ### Static Segment Methods
 
 Dovetail supports static methods in the pipeline class being used as segments:
