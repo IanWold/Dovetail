@@ -22,3 +22,4 @@ DOVE014 | Dovetail.SourceGenerator | Error | An ancestor of a nested pipeline ty
 DOVE015 | Dovetail.SourceGenerator | Error | A pipeline can't be nested inside a generic type
 DOVE016 | Dovetail.SourceGenerator | Error | A [Segment] method can't have its own type parameters
 DOVE017 | Dovetail.SourceGenerator | Error | More than one segment implements the same IPipelineSegment<...> interface
+DOVE018 | Dovetail.SourceGenerator | Error | Segment dependency ambiguously matches a pipeline input and a segment's result
