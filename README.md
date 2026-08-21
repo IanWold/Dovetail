@@ -156,6 +156,26 @@ public partial class ItemPipeline
 
 (Simplified for readability — the generator fully qualifies every type it emits.)
 
+### Dependency Injection
+
+If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
+
+```csharp
+services.AddPipelines();
+```
+
+This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
+
+```csharp
+public class ItemsController(ItemPipeline pipeline)
+{
+    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
+        pipeline.ExecuteAsync(itemId, ct);
+}
+```
+
+`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
+
 ### Constructors
 
 Both primary and conventional constructors work:
@@ -229,26 +249,6 @@ private static async Task<Result> SomeSegment(Input input, CancellationToken ct)
 ```
 
 The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
-
-### Dependency Injection
-
-If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
-
-```csharp
-services.AddPipelines();
-```
-
-This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
-
-```csharp
-public class ItemsController(ItemPipeline pipeline)
-{
-    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
-        pipeline.ExecuteAsync(itemId, ct);
-}
-```
-
-`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
 
 ### Chaining Pipelines
 
