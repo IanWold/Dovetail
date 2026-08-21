@@ -35,6 +35,8 @@ Four pipelines, three of them exposed as endpoints:
 - **`OrderConfirmationPipeline`** — `GET /orders/{orderId}` — a multi-level chain: `OrderId` → order details → an extracted `UserId` → customer profile, alongside payment and shipment lookups.
 - **`CustomerProfilePipeline`** — not exposed directly, but implements both `IPipeline<UserId, CustomerProfile>` and the matching `IPipelineSegment<UserId, CustomerProfile>` shape, built from two small segments: `CustomerAccountSegment` and `LoyaltyStatusSegment`.
 
+None of the four pipelines has an assembler *class* — the final `[Segment]` in each one is a `private static` method declared right in the pipeline's own body (see the [main README](../README.md#static-segment-methods)). `OrderConfirmationPipeline` uses the same mechanism for the `OrderId → UserId` extraction too: no more one-line passthrough class just to make a projection type-matchable.
+
 That last pipeline is reused two different ways, both from the same two segment classes:
 
 - **As a whole**, inside `OrderConfirmationPipeline` — wired in as `[Segment] CustomerProfilePipeline customer`, the same pipeline-as-segment composition shown in the main README.

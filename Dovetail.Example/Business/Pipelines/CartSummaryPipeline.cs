@@ -13,6 +13,17 @@ internal partial class CartSummaryPipeline(
     [Segment] PromotionsSegment promotions,
     [Segment] ShippingEstimateSegment shipping,
     [Segment] CustomerAccountSegment account,
-    [Segment] LoyaltyStatusSegment loyalty,
-    [Segment] CartSummaryAssembler assembler
-) : IPipeline<UserId, CartId, CartSummary>;
+    [Segment] LoyaltyStatusSegment loyalty
+) : IPipeline<UserId, CartId, CartSummary>
+{
+    [Segment]
+    private static CartSummary Assemble(
+        IReadOnlyList<CartLineItem> items,
+        CartPricing pricing,
+        AppliedPromotions promotions,
+        ShippingEstimate shipping,
+        CustomerAccount account,
+        LoyaltyStatus loyalty
+    ) =>
+        new(items, pricing, promotions, shipping, new CustomerProfile(account, loyalty));
+}

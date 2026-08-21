@@ -9,6 +9,16 @@ internal partial class ProductDetailPipeline(
     [Segment] PricingSegment pricing,
     [Segment] InventorySegment inventory,
     [Segment] ReviewSummarySegment reviews,
-    [Segment] RecommendationsSegment recommendations,
-    [Segment] ProductDetailAssembler assembler
-) : IPipeline<Sku, ProductDetail>;
+    [Segment] RecommendationsSegment recommendations
+) : IPipeline<Sku, ProductDetail>
+{
+    [Segment]
+    private static ProductDetail Assemble(
+        ProductInfo info,
+        PricingInfo pricing,
+        InventoryStatus inventory,
+        ReviewSummary reviews,
+        IReadOnlyList<RecommendedProduct> recommendations
+    ) =>
+        new(info, pricing, inventory, reviews, recommendations);
+}
