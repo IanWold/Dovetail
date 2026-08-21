@@ -176,6 +176,18 @@ public class ItemsController(ItemPipeline pipeline)
 
 `AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
 
+Every segment and pipeline is registered transient by default. Add `[Lifetime(ServiceLifetime.Singleton)]` or `[Lifetime(ServiceLifetime.Scoped)]` from `Dovetail.DependencyInjection` to change a segment or pipeline's lifetime:
+
+```csharp
+using Dovetail.DependencyInjection;
+
+[Lifetime(ServiceLifetime.Singleton)]
+public class ExpensiveClientSegment(ExpensiveClient client) : IPipelineSegment<Request, Response>
+{
+    public Task<Response> ExecuteAsync(Request request, CancellationToken ct) => client.SendAsync(request, ct);
+}
+```
+
 ### Constructors
 
 Both primary and conventional constructors work:
