@@ -6,5 +6,6 @@ internal readonly record struct TypeDeclarationModel(
     string Namespace,
     string Name,
     bool IsPartial,
-    ImmutableArray<ContainingTypeModel> ContainingTypes
+    ImmutableArray<ContainingTypeModel> ContainingTypes,
+    string TypeParameterList
 );

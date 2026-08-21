@@ -115,7 +115,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         return new SegmentParameterInfo(
-            new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType)),
+            new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType)),
             pipelineInputsJoined,
             pipelineResultTypeName,
             parameterSymbol.Name,
@@ -172,6 +172,9 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         _ => "class"
     };
 
+    private static string GetTypeParameterList(INamedTypeSymbol type) =>
+        type.Arity == 0 ? "" : $"<{string.Join(", ", type.TypeParameters.Select(static t => t.Name))}>";
+
     private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context)
     {
         if (context.TargetSymbol is not IMethodSymbol { ContainingType: { } containingType } methodSymbol)
@@ -200,7 +203,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             pipelineResultTypeName = resolvedPipelineResultTypeName;
         }
 
-        var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType));
+        var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType));
 
         if (!methodSymbol.IsStatic)
         {
@@ -608,12 +611,12 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var inputParameterList = string.Join(", ", pipelineInputTypeNames.Select(
             (typeName, index) => $"{typeName} {GetPipelineInputParameterName(index, pipelineInputTypeNames.Length)}"));
         var inputParameter = inputParameterList.Length == 0 ? "" : $"{inputParameterList}, ";
-        var fullyQualifiedPipelineName = containingType.Namespace.Length > 0
+        var fullyQualifiedPipelineName = (containingType.Namespace.Length > 0
             ? $"{containingType.Namespace}.{containingType.Name}"
-            : containingType.Name;
+            : containingType.Name) + containingType.TypeParameterList;
 
         builder
-            .AppendLine($"partial class {containingType.Name}")
+            .AppendLine($"partial class {containingType.Name}{containingType.TypeParameterList}")
             .AppendLine("{")
             .AppendLine($"    public async global::System.Threading.Tasks.Task<{pipelineResultTypeName}> ExecuteAsync({inputParameter}global::System.Threading.CancellationToken token)")
             .AppendLine("    {");

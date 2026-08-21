@@ -250,6 +250,24 @@ private static async Task<Result> SomeSegment(Input input, CancellationToken ct)
 
 The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
 
+### Generic Pipelines
+
+Pipelines and segments can be generic, with segments parameterized by the same type:
+
+```csharp
+public class FirstSegment<T> : IPipelineSegment<Input, T> { ... }
+public class SecondSegment<T> : IPipelineSegment<T, Result> { ... }
+
+public partial class MyPipeline<T, U>(
+    [Segment] FirstSegment<T> first,
+    [Segment] SecondSegment<U> second
+) : IPipeline<Input, Result>
+{
+    [Segment]
+    private static U TtoU(T t) => t.ToU();
+}
+```
+
 ### Chaining Pipelines
 
 `IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (the same input types, in the same order, and the same result type). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
