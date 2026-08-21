@@ -234,6 +234,28 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             );
         }
 
+        if (methodSymbol.IsGenericMethod)
+        {
+            return new SegmentParameterInfo(
+                containingTypeModel,
+                pipelineInputsJoined,
+                pipelineResultTypeName,
+                methodSymbol.Name,
+                "",
+                null,
+                false,
+                null,
+                null,
+                null,
+                methodLocation,
+                containingTypeLocation,
+                IsStaticSegmentMethod: true,
+                StaticSegmentMethodProblem: StaticSegmentMethodProblem.HasOwnTypeParameters,
+                SegmentIsAsync: false,
+                SegmentAcceptsCancellationToken: false
+            );
+        }
+
         var parameters = methodSymbol.Parameters;
         var acceptsCancellationToken = parameters.Length > 0
             && parameters[parameters.Length - 1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == "global::System.Threading.CancellationToken";
@@ -356,6 +378,11 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 else if (parameter.StaticSegmentMethodProblem == StaticSegmentMethodProblem.NoReturnValue)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(SegmentMethodMustReturnAValue, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
+                    hasErrors = true;
+                }
+                else if (parameter.StaticSegmentMethodProblem == StaticSegmentMethodProblem.HasOwnTypeParameters)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(SegmentMethodCannotHaveOwnTypeParameters, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
                     hasErrors = true;
                 }
 

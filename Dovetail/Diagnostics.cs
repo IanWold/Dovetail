@@ -138,4 +138,13 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor SegmentMethodCannotHaveOwnTypeParameters = new(
+        id: "DOVE016",
+        title: "A [Segment] method can't have its own type parameters",
+        messageFormat: "'{0}' declares [Segment] on method '{1}', which has its own type parameters; a segment method can use the pipeline's type parameters, but can't introduce new ones of its own",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

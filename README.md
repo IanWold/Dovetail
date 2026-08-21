@@ -377,3 +377,4 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | DOVE013 | A `[Segment]` method must return a value — either `TResult` or `Task<TResult>`. |
 | DOVE014 | Every type containing a nested pipeline must be `partial`. |
 | DOVE015 | A pipeline can't be nested inside a generic type. |
+| DOVE016 | A `[Segment]` method can't have its own type parameters — it can use the pipeline's, but can't introduce new ones. |
