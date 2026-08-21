@@ -390,17 +390,18 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | DOVE001 | The pipeline type must be `partial`. |
 | DOVE002 | The pipeline type must implement exactly one `IPipeline<...>` interface. |
 | DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface; if its concrete type implements more than one, type the parameter as the specific interface instead. |
-| DOVE004 | No segment produces the pipeline's result type. |
-| DOVE005 | Two or more segments produce the same type. |
-| DOVE006 | A segment's input isn't produced by any other segment or one of the pipeline's own input types. |
-| DOVE007 | The segments form a dependency cycle. |
-| DOVE008 | A segment's result is never used, directly or transitively, by the segment producing the pipeline's result. |
-| DOVE009 | The pipeline declares the same input type more than once. |
-| DOVE010 | A `[Segment]` parameter on a non-primary constructor has no field or property of its type to read its value from. |
-| DOVE011 | A `[Segment]` parameter on a non-primary constructor has more than one field or property of its type — Dovetail can't tell which one to use. |
+| DOVE004 | No segment produces the pipeline's result type; add one or change the pipeline's declared result type. |
+| DOVE005 | Two or more segments produce the same type; change one's result type or remove the extras. |
+| DOVE006 | Nothing produces a segment's input; add a segment that does or declare it as one of the pipeline's own inputs. |
+| DOVE007 | The segments form a dependency cycle; break it by removing or redirecting one of the dependencies. |
+| DOVE008 | A segment's result is never used, directly or transitively, by the segment producing the pipeline's result; remove it or route its result onto that path. |
+| DOVE009 | The pipeline declares the same input type more than once; wrap one in its own type or combine them into a single input. |
+| DOVE010 | A `[Segment]` parameter on a non-primary constructor has no field or property of its type to read its value from; use a primary constructor or add one. |
+| DOVE011 | A `[Segment]` parameter on a non-primary constructor has more than one field or property of its type; Dovetail can't tell which one to use, so use a primary constructor or remove the extras. |
 | DOVE012 | A `[Segment]` method must be `static`. |
-| DOVE013 | A `[Segment]` method must return a value — either `TResult` or `Task<TResult>`. |
+| DOVE013 | A `[Segment]` method must return a value, either `TResult` or `Task<TResult>`. |
 | DOVE014 | Every type containing a nested pipeline must be `partial`. |
-| DOVE015 | A pipeline can't be nested inside a generic type. |
-| DOVE016 | A `[Segment]` method can't have its own type parameters — it can use the pipeline's, but can't introduce new ones. |
+| DOVE015 | A pipeline can't be nested inside a generic type; move it out, or make the ancestor non-generic. |
+| DOVE016 | A `[Segment]` method can't have its own type parameters; it can use the pipeline's, but can't introduce new ones. |
 | DOVE017 | Two or more segments implement the same `IPipelineSegment<...>` interface, so `AddPipelines()` can't tell which one to register for it. |
+| DOVE018 | A segment's input ambiguously matches both a pipeline input and another segment's result; give one of them a distinct type. |

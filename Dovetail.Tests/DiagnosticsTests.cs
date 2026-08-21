@@ -139,6 +139,36 @@ public class DiagnosticsTests
     }
 
     [Fact]
+    public void ReportsDiagnostic_WhenASegmentInputAmbiguouslyMatchesAPipelineInputAndASegmentResult()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class RootSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public class ConsumerSegment : IPipelineSegment<string, bool>
+            {
+                public Task<bool> ExecuteAsync(string value, CancellationToken ct) => Task.FromResult(value.Length > 0);
+            }
+
+            public partial class AmbiguousPipeline(
+                [Segment] RootSegment root,
+                [Segment] ConsumerSegment consumer
+            ) : IPipeline<int, string, bool>;
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE018");
+    }
+
+    [Fact]
     public void ReportsDiagnostic_WhenSegmentsFormACycle()
     {
         const string source = """

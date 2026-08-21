@@ -460,7 +460,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
                 if (matchesInput && matchesSegment)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, $"it matches both a pipeline input and segment '{providerName}'"));
+                    context.ReportDiagnostic(Diagnostic.Create(AmbiguousDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, providerName));
                     hasErrors = true;
                 }
                 else if (matchesInput)
@@ -473,7 +473,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, "no segment produces it and it does not match any of the pipeline's input types"));
+                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType));
                     hasErrors = true;
                 }
             }
