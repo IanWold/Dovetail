@@ -188,7 +188,22 @@ public partial class MyPipeline : IPipeline<int, string>
 }
 ```
 
-This supports cases where it would be cumbersome to create a segment class for simple data transformations in the middle of a pipeline run. As a practical example, take a case where a segment's whole job is projecting one type into another, adapting one segment's result into the shape another one needs:
+While `ISegment` only supports up to eight inputs, static segment methods support any number of inputs. This can be a particular benefit when aggregating all of the segment results into the final pipeline output (also sparing the need for a dangling "Assembler" segment):
+
+```csharp
+public partial class ItemPipeline(
+    [Segment] ItemInfoSegment info,
+    [Segment] ItemPriceSegment price,
+    [Segment] ItemImagesSegment images
+) : IPipeline<int, ItemModel>
+{
+    [Segment]
+    private static ItemModel Aggregate(ItemInfo itemResult, ItemPrice priceResult, ItemImages imagesResult) =>
+        new ItemModel(itemResult, priceResult, imagesResult);
+}
+```
+
+This supports cases where it would be cumbersome to create a segment class for simple data transformations in the middle of a pipeline run:
 
 ```csharp
 public record OrderInfo(OrderId OrderId, CustomerId CustomerId, ...);
@@ -206,14 +221,14 @@ public partial class OrderPipeline(
 }
 ```
 
-`OrderInfoToCustomerId`'s parameters are matched into the dependency graph exactly like a segment class's `ExecuteAsync` — here, `OrderInfo` resolves against `order`'s result, and the method's return type (`CustomerId`) becomes what `customer` resolves its own input against. A segment method can be `async` too, in which case it may take an optional trailing `CancellationToken`, exactly like a class-based segment:
+A segment method can be `async` too, in which case it may take an optional trailing `CancellationToken`, exactly like a class-based segment:
 
 ```csharp
 [Segment]
 private static async Task<Result> SomeSegment(Input input, CancellationToken ct) => await ...;
 ```
 
-The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate. An instance method could reach into `this`, reading another captured segment field directly, which would be a real dependency Dovetail never knows about and never awaits correctly, or reading and writing instance state shared with segments that Dovetail runs concurrently, which is a real data race.
+The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
 
 ### Dependency Injection
 
