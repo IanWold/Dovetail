@@ -11,7 +11,7 @@ Dovetail
 
 A source generator for implementing asynchronous pipelines of any complexity.
 
-[Quickstart](#quickstart) • [Detailed Explanation](#detailed-explanation) • [Diagnostics](#detailed-explanation)
+[Quickstart](#quickstart) • [Detailed Explanation](#detailed-explanation) • [Diagnostics](#diagnostics)
 
 </div>
 
@@ -89,6 +89,8 @@ public partial class ItemPipeline(
     [Segment] ItemAssembler assembler
 ) : IPipeline<int, ItemModel>;
 ```
+
+Like `IPipelineSegment<...>`, `IPipeline<...>` comes in variants up to eight inputs (`IPipeline<T1, ..., T8, TResult>`). Any segment input that isn't produced by another segment is matched against the pipeline's own declared input types, so a multi-input pipeline just spreads those across its segments however the dependency graph calls for.
 
 That's it — Dovetail generates `ExecuteAsync`:
 
@@ -176,7 +178,7 @@ public class ItemsController(ItemPipeline pipeline)
 
 ### Chaining Pipelines
 
-`IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (0 or 1 input). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
+`IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (the same input types, in the same order, and the same result type). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
 
 ```csharp
 public partial class ItemInfoPipeline(
@@ -269,10 +271,11 @@ Dovetail validates the segment graph at compile time and reports one of the foll
 | ID | Meaning |
 |---|---|
 | DOVE001 | The pipeline type must be `partial`. |
-| DOVE002 | The pipeline type must implement `IPipeline<TResult>` or `IPipeline<TInput, TResult>`. |
+| DOVE002 | The pipeline type must implement exactly one `IPipeline<...>` interface. |
 | DOVE003 | A `[Segment]` parameter's type must implement exactly one `IPipelineSegment<...>` interface. |
 | DOVE004 | No segment produces the pipeline's result type. |
 | DOVE005 | Two or more segments produce the same type. |
-| DOVE006 | A segment's input isn't produced by any other segment or the pipeline's own input. |
+| DOVE006 | A segment's input isn't produced by any other segment or one of the pipeline's own input types. |
 | DOVE007 | The segments form a dependency cycle. |
 | DOVE008 | A segment's result is never used, directly or transitively, by the segment producing the pipeline's result. |
+| DOVE009 | The pipeline declares the same input type more than once. |

@@ -16,7 +16,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor ContainingTypeMustImplementPipeline = new(
         id: "DOVE002",
         title: "Containing type must implement IPipeline",
-        messageFormat: "'{0}' declares a [Segment] parameter but does not implement exactly one of IPipeline<TResult> or IPipeline<TInput, TResult>",
+        messageFormat: "'{0}' declares a [Segment] parameter but does not implement exactly one IPipeline<...> interface",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -71,6 +71,15 @@ internal static class Diagnostics
         id: "DOVE008",
         title: "Segment is unreachable from the pipeline result",
         messageFormat: "Parameter '{0}' is never used, directly or transitively, by the segment that produces '{1}'; its failures could go unobserved, so every segment must feed the pipeline result",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    internal static readonly DiagnosticDescriptor DuplicatePipelineInput = new(
+        id: "DOVE009",
+        title: "The pipeline declares the same input type more than once",
+        messageFormat: "'{0}' declares more than one input of type {1}; each of a pipeline's own input types must be unique",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true

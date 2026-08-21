@@ -70,7 +70,14 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             ? string.Empty
             : containingType.ContainingNamespace.ToDisplayString();
 
-        PipelineShapeResolver.TryGetPipelineShape(containingType, out var pipelineInputTypeName, out var pipelineResultTypeName);
+        string? pipelineInputsJoined = null;
+        string? pipelineResultTypeName = null;
+
+        if (PipelineShapeResolver.TryGetPipelineShape(containingType, out var pipelineInputTypeNames, out var resolvedPipelineResultTypeName))
+        {
+            pipelineInputsJoined = string.Join(InputSeparator, pipelineInputTypeNames);
+            pipelineResultTypeName = resolvedPipelineResultTypeName;
+        }
 
         string? segmentTypeName = null;
         string? segmentInputsJoined = null;
@@ -87,7 +94,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         return new SegmentParameterInfo(
             new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial),
-            pipelineInputTypeName,
+            pipelineInputsJoined,
             pipelineResultTypeName,
             parameterSymbol.Name,
             segmentTypeName,
@@ -115,8 +122,21 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        var pipelineInputTypeName = parameters[0].PipelineInputTypeName;
+        var pipelineInputTypeNames = string.IsNullOrEmpty(parameters[0].PipelineInputTypeNamesJoined)
+            ? ImmutableArray<string>.Empty
+            : parameters[0].PipelineInputTypeNamesJoined!.Split(new[] { InputSeparator }, StringSplitOptions.None).ToImmutableArray();
         var hasErrors = false;
+
+        foreach (var duplicateInputType in pipelineInputTypeNames.GroupBy(static t => t).Where(static g => g.Count() > 1).Select(static g => g.Key))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(DuplicatePipelineInput, containingTypeLocation, containingType.Name, duplicateInputType));
+            hasErrors = true;
+        }
+
+        if (hasErrors)
+        {
+            return false;
+        }
 
         foreach (var parameter in parameters)
         {
@@ -167,39 +187,40 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         var resultProviders = segments.ToDictionary(static s => s.ResultTypeName, static s => s.ParameterName);
-        var dependencies = new Dictionary<string, ImmutableArray<string>>();
+        var dependencies = new Dictionary<string, ImmutableArray<DependencyBinding>>();
 
         foreach (var segment in segments)
         {
-            var providers = ImmutableArray.CreateBuilder<string>(segment.InputTypeNames.Length);
+            var bindings = ImmutableArray.CreateBuilder<DependencyBinding>(segment.InputTypeNames.Length);
             foreach (var inputType in segment.InputTypeNames)
             {
-                var matchesInput = pipelineInputTypeName is not null && inputType == pipelineInputTypeName;
+                var pipelineInputIndex = pipelineInputTypeNames.IndexOf(inputType);
+                var matchesInput = pipelineInputIndex >= 0;
                 var matchesSegment = resultProviders.TryGetValue(inputType, out var providerName);
 
                 if (matchesInput && matchesSegment)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, $"it matches both the pipeline input and segment '{providerName}'"));
+                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, $"it matches both a pipeline input and segment '{providerName}'"));
                     hasErrors = true;
                 }
                 else if (matchesInput)
                 {
-                    providers.Add(string.Empty);
+                    bindings.Add(new DependencyBinding(SegmentParameterName: null, PipelineInputIndex: pipelineInputIndex));
                 }
                 else if (matchesSegment)
                 {
-                    providers.Add(providerName!);
+                    bindings.Add(new DependencyBinding(SegmentParameterName: providerName, PipelineInputIndex: null));
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, "no segment produces it and it does not match the pipeline input"));
+                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, "no segment produces it and it does not match any of the pipeline's input types"));
                     hasErrors = true;
                 }
             }
 
-            dependencies[segment.ParameterName] = providers.Count == segment.InputTypeNames.Length
-                ? providers.ToImmutable()
-                : ImmutableArray<string>.Empty;
+            dependencies[segment.ParameterName] = bindings.Count == segment.InputTypeNames.Length
+                ? bindings.ToImmutable()
+                : ImmutableArray<DependencyBinding>.Empty;
         }
 
         if (hasErrors)
@@ -228,12 +249,12 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        var source = GenerateSource(containingType, pipelineInputTypeName, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, hasActivitySource);
+        var source = GenerateSource(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, hasActivitySource);
         context.AddSource($"{containingType.Name}.g.cs", source);
         return true;
     }
 
-    private static bool TryFindCycle(ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<string>> dependencies, out string? cycleDescription)
+    private static bool TryFindCycle(ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, out string? cycleDescription)
     {
         var visiting = new HashSet<string>();
         var visited = new HashSet<string>();
@@ -256,9 +277,9 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
             path.Add(parameterName);
 
-            foreach (var provider in dependencies[parameterName])
+            foreach (var binding in dependencies[parameterName])
             {
-                if (provider.Length > 0 && !Visit(provider))
+                if (binding.SegmentParameterName is string providerName && !Visit(providerName))
                 {
                     return false;
                 }
@@ -283,7 +304,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static HashSet<string> ComputeReachableFrom(string terminalParameterName, Dictionary<string, ImmutableArray<string>> dependencies)
+    private static HashSet<string> ComputeReachableFrom(string terminalParameterName, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies)
     {
         var reachable = new HashSet<string> { terminalParameterName };
         var stack = new Stack<string>();
@@ -291,11 +312,11 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         while (stack.Count > 0)
         {
-            foreach (var provider in dependencies[stack.Pop()])
+            foreach (var binding in dependencies[stack.Pop()])
             {
-                if (provider.Length > 0 && reachable.Add(provider))
+                if (binding.SegmentParameterName is string providerName && reachable.Add(providerName))
                 {
-                    stack.Push(provider);
+                    stack.Push(providerName);
                 }
             }
         }
@@ -303,7 +324,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return reachable;
     }
 
-    private static string GenerateSource(TypeDeclarationModel containingType, string? pipelineInputTypeName, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<string>> dependencies, string terminalParameterName, bool hasActivitySource)
+    private static string GenerateSource(TypeDeclarationModel containingType, ImmutableArray<string> pipelineInputTypeNames, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName, bool hasActivitySource)
     {
         var builder = new StringBuilder()
             .AppendLine("// <auto-generated/>")
@@ -315,7 +336,9 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             builder.AppendLine($"namespace {containingType.Namespace};").AppendLine();
         }
 
-        var inputParameter = pipelineInputTypeName is null ? "" : $"{pipelineInputTypeName} input, ";
+        var inputParameterList = string.Join(", ", pipelineInputTypeNames.Select(
+            (typeName, index) => $"{typeName} {GetPipelineInputParameterName(index, pipelineInputTypeNames.Length)}"));
+        var inputParameter = inputParameterList.Length == 0 ? "" : $"{inputParameterList}, ";
         var fullyQualifiedPipelineName = containingType.Namespace.Length > 0
             ? $"{containingType.Namespace}.{containingType.Name}"
             : containingType.Name;
@@ -378,11 +401,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         foreach (var segment in segments)
         {
-            var providers = dependencies[segment.ParameterName];
-            var args = new List<string>(providers.Length + 1);
-            foreach (var provider in providers)
+            var bindings = dependencies[segment.ParameterName];
+            var args = new List<string>(bindings.Length + 1);
+            foreach (var binding in bindings)
             {
-                args.Add(provider.Length == 0 ? "input" : $"await {provider}Task.ConfigureAwait(false)");
+                args.Add(binding.PipelineInputIndex is int pipelineInputIndex
+                    ? GetPipelineInputParameterName(pipelineInputIndex, pipelineInputTypeNames.Length)
+                    : $"await {binding.SegmentParameterName}Task.ConfigureAwait(false)");
             }
 
             args.Add("linkedToken");
@@ -441,4 +466,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
     private static string ToPascalCase(string name) =>
         name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name.Substring(1);
+
+    private static string GetPipelineInputParameterName(int index, int totalCount) =>
+        totalCount == 1 ? "input" : $"input{index + 1}";
 }

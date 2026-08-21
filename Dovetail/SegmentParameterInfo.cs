@@ -4,7 +4,7 @@ namespace Dovetail;
 
 internal readonly record struct SegmentParameterInfo(
     TypeDeclarationModel ContainingType,
-    string? PipelineInputTypeName,
+    string? PipelineInputTypeNamesJoined,
     string? PipelineResultTypeName,
     string ParameterName,
     string? SegmentTypeName,

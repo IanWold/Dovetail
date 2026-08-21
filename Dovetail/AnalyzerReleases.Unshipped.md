@@ -13,3 +13,4 @@ DOVE005 | Dovetail.SourceGenerator | Error | More than one segment produces the 
 DOVE006 | Dovetail.SourceGenerator | Error | Segment dependency could not be resolved
 DOVE007 | Dovetail.SourceGenerator | Error | Segment dependency cycle detected
 DOVE008 | Dovetail.SourceGenerator | Error | Segment is unreachable from the pipeline result
+DOVE009 | Dovetail.SourceGenerator | Error | The pipeline declares the same input type more than once
