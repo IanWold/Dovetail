@@ -541,6 +541,30 @@ To make it easy to visually assess Dovetail's DAG, every generated `ExecuteAsync
 
 Most IDEs won't render Mermaid directly in a tooltip, but the diagram can be copied into [mermaid.live](https://mermaid.live) or any other Mermaid viewer. If the pipeline carries [`[MaxConcurrency(n)]`](#managing-concurrency), the comment notes the cap alongside the diagram.
 
+<details><summary>Mermaid sample from the Example app</summary>
+  
+```mermaid
+flowchart TD
+    in_0(["input: OrderId"])
+    seg_order["order: OrderDetails"]
+    seg_OrderDetailsToUserId["OrderDetailsToUserId: UserId"]
+    seg_customer["customer: CustomerProfile"]
+    seg_payment["payment: PaymentStatus"]
+    seg_shipment["shipment: ShipmentTrackingInfo"]
+    seg_Assemble("Assemble: OrderConfirmation")
+    in_0 --> seg_order
+    seg_order --> seg_OrderDetailsToUserId
+    seg_OrderDetailsToUserId --> seg_customer
+    seg_order --> seg_payment
+    seg_order --> seg_shipment
+    seg_order --> seg_Assemble
+    seg_customer --> seg_Assemble
+    seg_payment --> seg_Assemble
+    seg_shipment --> seg_Assemble
+```
+  
+</details>
+
 ### 🏎️ Concurrency and Exceptions
 
 Every segment starts running immediately, but only the segment producing the pipeline's result is directly awaited; every other segment is guaranteed to be awaited transitively somewhere along the way there (that's what [DOVE008](#diagnostics) enforces). When two or more segments fail around the same time, it comes down to a race for which exception actually reaches the caller (see [Exception Handling](#exception-handling)).
