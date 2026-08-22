@@ -46,7 +46,6 @@ Most notably, Dovetail is for managing the complexity of aggregation logic that 
 * **Dynamic or conditional graph shapes:** The DAG is resolved entirely by compile-time type matching. There's no "run this segment only if that one says so," no step list that varies by tenant, feature flag, or runtime config. If your workflow needs conditional branching, this isn't the tool.
 * **Long-running or durable workflows:** Dovetail has no persistence, no checkpointing, and no resuming after a crash. Dovetail is an in-process, single-execution composition helper, not a durable orchestrator.
 * **Heavy CPU-bound work:** The concurrency model overlaps I/O waits and doesn't spread compute across cores. If your "segments" are actually CPU-heavy, this won't help beyond what `async`/`await` already gives you.
-* **Workflows that need multi-error aggregation as a first-class concern:** Only one exception surfaces per execution (see [Concurrent Failures](#concurrent-failures)). Dovetail does support working around this by returning errors as results from segments, but it is the wrong default if your domain fundamentally wants "tell me everything that failed."
 * **Streaming or incremental results:** One execution produces one final result; Dovetail does not support `IAsyncEnumerable`, nor progressive rendering as branches complete.
 
 ## Quickstart
