@@ -40,6 +40,57 @@ public class NestedPipelineTests
     }
 
     [Fact]
+    public async Task GeneratedPipeline_ForNestedPipelineType_WithMultipleChainedSegments_ProducesCorrectResult()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class Second;
+            public class Third;
+            public class Fourth;
+
+            public class SecondSegment : IPipelineSegment<Second, Third>
+            {
+                public Task<Third> ExecuteAsync(Second value, CancellationToken ct) => Task.FromResult(new Third());
+            }
+
+            public class ThirdSegment : IPipelineSegment<Third, Fourth>
+            {
+                public Task<Fourth> ExecuteAsync(Third value, CancellationToken ct) => Task.FromResult(new Fourth());
+            }
+
+            public partial class Outer
+            {
+                public partial class NestedPipeline(
+                    [Segment] SecondSegment second,
+                    [Segment] ThirdSegment third
+                ) : IPipeline<Second, Fourth>;
+            }
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var outerType = assembly.GetType("Sample.Outer")!;
+        var pipelineType = outerType.GetNestedType("NestedPipeline")!;
+        var second = Activator.CreateInstance(assembly.GetType("Sample.SecondSegment")!)!;
+        var third = Activator.CreateInstance(assembly.GetType("Sample.ThirdSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, second, third)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var secondValue = Activator.CreateInstance(assembly.GetType("Sample.Second")!)!;
+        var task = (Task)method.Invoke(pipeline, [secondValue, CancellationToken.None])!;
+        
+        await task;
+
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        Assert.Equal("Sample.Fourth", result.GetType().FullName);
+    }
+
+    [Fact]
     public async Task GeneratedPipeline_ForDeeplyNestedPipelineType_ProducesCorrectResult()
     {
         const string source = """
