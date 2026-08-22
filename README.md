@@ -343,6 +343,18 @@ Note that the tracing calls are still nearly free if nothing's listening: `Activ
 
 ## 🏛️ Architectural Considerations
 
+### ⚡ Concurrency
+
+Segments that don't depend on each other run genuinely concurrently, not just asynchronously in sequence, which results in several considerations to design around up front, beyond exception/error handling (see below):
+
+* **Shared dependencies need to tolerate concurrent use.** If two segments in the same pipeline take the same injected instance (i.e. an EF Core `DbContext`, a non-thread-safe cache client, anything not built for concurrent access) they can genuinely collide mid-execution, not just under load. This is different from a DI lifetime mistake leaking state across executions; here, two segments are touching the same object during one execution. Give each segment its own instance (typically `Scoped` per execution, or `Transient`), or use a dependency that's actually safe to share.
+
+* **Ordering is only what the type graph says it is.** If segment B needs to run after segment A but doesn't actually consume A's result, Dovetail has no way to know that; declaration order doesn't matter, only whether one segment's input is another's output. Any ordering requirement that isn't expressed as a real data dependency is undefined. Therefore, you should express it as one, even a trivial pass-through, rather than relying on how the DAG happens to schedule things today.
+
+* **A sibling's failure doesn't stop an independent segment's side effects.** When one segment fails, Dovetail cancels a shared token and drains the rest, but that's cooperative, not preemptive, as a segment that doesn't check the token keeps running until it finishes. If the code is running on a branch independent of the failure, it can complete in full even though the pipeline as a whole ends up throwing. Put side-effecting segments as late in the DAG as you reasonably can, so they only run once everything upstream of them has actually succeeded, rather than racing alongside branches that might fail.
+
+* **Nothing throttles fan-out.** Every eligible segment starts at once, with no built-in max-degree-of-parallelism. A pipeline fanning out to a few dozen segments that each call an external API fires that many concurrent calls simultaneously. Therefore connection-pool exhaustion and rate-limit responses are yours to guard against (a rate-limited `HttpClient`, a `SemaphoreSlim` inside a segment, or similar). It's also easy to undercount: a nested pipeline used as a segment ([Pipelines-as-Segments](#pipelines-as-segments)) fans out its own segments too, so the real concurrency of an outer pipeline isn't just its top-level segment count.
+
 ### 💥 Exception Handling
 
 Segments are not sandboxed within a pipeline, so an exception from one segment fails the entire pipeline. It was deliberately chosen that Dovetail has no concept of an "optional" segment. If a segment should degrade gracefully instead of failing the whole pipeline, catch its own failure and return a fallback value:
@@ -488,7 +500,7 @@ Because a pipeline's shape is resolved entirely by compile-time type matching, m
 
 Note that a pipeline class with zero `[Segment]`-tagged members produces no diagnostic and no generated code at all, since Dovetail only examines types with at least one `[Segment]` usage. The error you'll see in this case is `CS0535: does not implement interface member` instead of a Dovetail-specific one, which can look like a missing-feature bug rather than a missing `[Segment]` attribute.
 
-### 📄 Reading the Generated Source
+### 📚 Reading the Generated Source
 
 The fastest way to understand what a pipeline actually executes is to read the code Dovetail wrote for it rather than infer it. Dovetail outputs relatively simple, human-readable code. Add this to a project to write the generated files to disk:
 
@@ -509,11 +521,11 @@ Note that as a consequence, if you have "break on all exceptions" enabled you'll
 
 Further, the `CancellationToken` a segment receives isn't the same token instance passed into `ExecuteAsync`. Rather, Dovetail links it internally so it can cancel sibling segments as soon as one fails. This only matters if you're comparing token instances directly.
 
-### 🔒 Dependency Injection Lifetimes
+### 🌱 Dependency Injection Lifetimes
 
 `[Lifetime(...)]` defaults every pipeline and segment to `Transient`, which is the safe default. The risk shows up once you opt into `Scoped` or `Singleton`: any mutable state your own segment holds is now shared across concurrent pipeline executions. Turning on `ValidateScopes` and `ValidateOnBuild` when building your `ServiceProvider` is good practice generally, and it'll catch a `Scoped` segment landing inside a longer-lived pipeline at startup instead of at first request.
 
-### 🔬 Isolating a Failure
+### 🛟 Isolating a Failure
 
 Segments are plain, [independently testable](#testing-segments) classes, so reproduce a suspected bug by exercising the segment directly instead of running the whole pipeline. If you've adopted the [Result pattern](#collecting-multiple-errors) for multi-error collection, remember that debugging shifts from catching an exception to inspecting the returned `Result`.
 
