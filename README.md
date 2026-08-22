@@ -31,7 +31,7 @@ Dovetail extensively checks your pipelines with clear, helpful diagnostic messag
 
 ## 🕊️ Why Dovetail?
 
-**Compile-time correctness, helpful diagnostics:** Every dependency within the pipeline is checked when your project builds, not when a request hits production. A missing dependency, two segments producing the same type, a cycle: these are compile errors with a specific, located diagnostic, not bugs you find at 2 AM. There's no string-keyed registration, no reflection-based service location, no runtime graph to misconfigure. The type system is the only source of truth.
+**Compile-time correctness, helpful diagnostics:** Every dependency within the pipeline is checked when your project builds, not when a request hits production. There's no string-keyed registration, no reflection-based service location, no runtime graph to misconfigure. The type system is the only source of truth.
 
 **Real parallelism, no boilerplate:** Segments that don't depend on each other run concurrently automatically; you never hand-write `Task.WhenAll` and you never accidentally serialize independent work by awaiting too early. Cancellation propagation, draining in-flight work when something fails, and bounding concurrency are all the kind of thing that's easy to get subtly wrong by hand.
 
