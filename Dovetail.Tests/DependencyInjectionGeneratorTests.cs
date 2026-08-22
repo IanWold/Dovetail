@@ -124,13 +124,13 @@ public class DependencyInjectionGeneratorTests
 
             namespace Sample;
 
-            [Lifetime(ServiceLifetime.Singleton)]
+            [Lifetime(DependencyLifetime.Singleton)]
             public class FooSegment : IPipelineSegment<int, string>
             {
                 public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
             }
 
-            [Lifetime(ServiceLifetime.Scoped)]
+            [Lifetime(DependencyLifetime.Scoped)]
             public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, string>;
             """;
 
@@ -213,7 +213,7 @@ public class DependencyInjectionGeneratorTests
 
             namespace Sample;
 
-            [Lifetime(ServiceLifetime.Singleton)]
+            [Lifetime(DependencyLifetime.Singleton)]
             public class CounterSegment : IPipelineSegment<int, string>
             {
                 public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
@@ -468,7 +468,7 @@ public class DependencyInjectionGeneratorTests
 
             namespace Sample;
 
-            [Lifetime(ServiceLifetime.Singleton)]
+            [Lifetime(DependencyLifetime.Singleton)]
             public class FooSegment : IPipelineSegment<int, string>
             {
                 public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());

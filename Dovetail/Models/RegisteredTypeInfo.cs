@@ -8,7 +8,7 @@ internal readonly record struct RegisteredTypeInfo(
     bool IsPipeline,
     int Arity,
     bool IsValueType,
-    ServiceLifetime Lifetime,
+    DependencyLifetime Lifetime,
     string? SegmentInterfaceTypeNamesJoined,
     Location? Location
 );

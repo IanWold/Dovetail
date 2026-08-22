@@ -102,7 +102,7 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         return null;
     }
 
-    private static ServiceLifetime GetLifetime(INamedTypeSymbol symbol)
+    private static DependencyLifetime GetLifetime(INamedTypeSymbol symbol)
     {
         foreach (var attribute in symbol.GetAttributes())
         {
@@ -115,11 +115,11 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
 
             if (attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is int rawValue)
             {
-                return (ServiceLifetime)rawValue;
+                return (DependencyLifetime)rawValue;
             }
         }
 
-        return ServiceLifetime.Transient;
+        return DependencyLifetime.Transient;
     }
 
     private static string GenerateSource(ImmutableArray<RegisteredTypeInfo> types)
@@ -161,10 +161,10 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         return builder.ToString();
     }
 
-    private static string GetMethodName(ServiceLifetime lifetime) => lifetime switch
+    private static string GetMethodName(DependencyLifetime lifetime) => lifetime switch
     {
-        ServiceLifetime.Singleton => "AddSingleton",
-        ServiceLifetime.Scoped => "AddScoped",
+        DependencyLifetime.Singleton => "AddSingleton",
+        DependencyLifetime.Scoped => "AddScoped",
         _ => "AddTransient"
     };
 

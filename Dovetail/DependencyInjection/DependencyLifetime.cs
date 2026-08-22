@@ -3,7 +3,7 @@ namespace Dovetail.DependencyInjection;
 /// <summary>
 /// The lifetime a pipeline or segment is registered with by <c>AddPipelines()</c>.
 /// </summary>
-public enum ServiceLifetime
+public enum DependencyLifetime
 {
     /// <summary>A new instance is created every time the service is requested.</summary>
     Transient,

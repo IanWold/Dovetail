@@ -27,7 +27,7 @@ Dovetail is a Roslyn source generator for building async pipelines out of small,
 
 **Generated code you can actually read:** `ExecuteAsync` is plain async/await — nothing you couldn't have written yourself, just correctly and without the tedium. No runtime reflection, no DI container in the hot path, nothing hidden behind the generator once your project is built.
 
-**Lightweight and quick to set up:** One NuGet package, no forced dependencies, no base classes to inherit, no configuration files, no startup registration required. A segment is a class implementing one interface; a pipeline is a partial class with a few `[Segment]` attributes — there's nothing else standing between `dotnet add package` and a working pipeline.
+**Lightweight and quick to set up:** One NuGet package, no forced dependencies, no base classes to inherit, no configuration files, no startup registration required. A segment is a class implementing one interface; a pipeline is a partial class with a few `[Segment]` attributes.
 
 ### Who Dovetail Is For
 
@@ -50,7 +50,13 @@ Most notably, Dovetail is for managing the complexity of aggregation logic that 
 
 ## Quickstart
 
-A segment is any class implementing `IPipelineSegment<TResult>` (or the multi-input generic variants, up to eight inputs). Its inputs and result are ordinary types — no interfaces or base classes required on them.
+```
+dotnet add package Dovetail
+```
+
+Dovetail relies on two main concepts: _pipelines_ and _segments_. _Segments_ are like normal services, but they encapsulate some operation that takes 0 or more inputs and produces some output. _Pipelines_ are composed of one or more _segments_. The segments that make up a pipeline need to have matching input/result types such that they can be stitched together in one call chain (i.e. SegmentA's result can be used as the input in SegmentB and so on). Dovetail does the code generation required to wire up those call chains, running operations asynchronously where able.
+
+A segment is any class or struct that implements `IPipelineSegment<TResult>` (or the multi-input generic variants like `IPipelineSegment<TInput, TResult>`, up to eight inputs). This signifies that it can be used as a segment in a pipeline. Its inputs and result types have no restrictions:
 
 ```csharp
 public class ItemInfoSegment(IDataRepo repo) : IPipelineSegment<int, ItemInfo>
@@ -70,31 +76,29 @@ public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, Ite
     public Task<ItemImages> ExecuteAsync(ItemInfo info, CancellationToken ct) =>
         cms.GetImagesAsync(info.Slug, ct);
 }
-
-public class ItemAssembler : IPipelineSegment<ItemInfo, ItemPrice, ItemImages, ItemModel>
-{
-    public Task<ItemModel> ExecuteAsync(ItemInfo info, ItemPrice price, ItemImages images, CancellationToken ct) =>
-        Task.FromResult(new ItemModel(info, price, images));
-}
 ```
 
-Declare the pipeline as a partial class, attaching `[Segment]` to a constructor parameter for each step:
+Declare the pipeline as a partial class, attaching `[Segment]` to a constructor parameter for each segment. Segments can also be static member methods:
 
 ```csharp
 public partial class ItemPipeline(
     [Segment] ItemInfoSegment info,
     [Segment] ItemPriceSegment price,
-    [Segment] ItemImagesSegment images,
-    [Segment] ItemAssembler assembler
-) : IPipeline<int, ItemModel>;
+    [Segment] ItemImagesSegment images
+) : IPipeline<int, ItemModel>
+{
+    [Segment]
+    private static ItemModel Assemble(ItemInfo info, ItemPrice price, ItemImages images) =>
+        new(info, price, images);
+}
 ```
 
 Like `IPipelineSegment<...>`, `IPipeline<...>` comes in variants up to eight inputs (`IPipeline<T1, ..., T8, TResult>`). Any segment input that isn't produced by another segment is matched against the pipeline's own declared input types, so a multi-input pipeline just spreads those across its segments however the dependency graph calls for.
 
-That's it — Dovetail generates `ExecuteAsync`:
+That's it! Dovetail generates `ExecuteAsync`:
 
 ```csharp
-var pipeline = new ItemPipeline(infoSegment, priceSegment, imagesSegment, assembler);
+var pipeline = new ItemPipeline(infoSegment, priceSegment, imagesSegment);
 ItemModel model = await pipeline.ExecuteAsync(itemId, cancellationToken);
 ```
 
@@ -120,11 +124,11 @@ public partial class ItemPipeline
         var infoTask = InfoAsync();
         var priceTask = PriceAsync();
         var imagesTask = ImagesAsync();
-        var assemblerTask = AssemblerAsync();
+        var AssembleTask = AssembleAsync();
 
         try
         {
-            return await assemblerTask.ConfigureAwait(false);
+            return await AssembleTask.ConfigureAwait(false);
         }
         catch
         {
@@ -143,12 +147,11 @@ public partial class ItemPipeline
         async Task<ItemImages> ImagesAsync() =>
             await images.ExecuteAsync(await infoTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
 
-        async Task<ItemModel> AssemblerAsync() =>
-            await assembler.ExecuteAsync(
+        async Task<ItemModel> AssembleAsync() =>
+            Assemble(
                 await infoTask.ConfigureAwait(false),
                 await priceTask.ConfigureAwait(false),
-                await imagesTask.ConfigureAwait(false),
-                linkedToken).ConfigureAwait(false);
+                await imagesTask.ConfigureAwait(false));
     }
 }
 ```
@@ -173,14 +176,19 @@ public class ItemsController(ItemPipeline pipeline)
 }
 ```
 
-`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected.
+`AddPipelines()` is only generated when the DI package is actually referenced. This keeps Dovetail from having a dependency on it, so projects that don't use DI are unaffected. Note also the generated extension only registers segments and pipelines themselves, whatever _they_ depend on (an `HttpClient`, a typed client, a repository) still needs its own ordinary registration:
 
-Every segment and pipeline is registered transient by default. Add `[Lifetime(ServiceLifetime.Singleton)]` or `[Lifetime(ServiceLifetime.Scoped)]` from `Dovetail.DependencyInjection` to change a segment or pipeline's lifetime:
+```csharp
+services.AddHttpClient<IPriceService, PriceService>();
+services.AddPipelines();
+```
+
+Every segment and pipeline is registered transient by default. Add `[Lifetime(DependencyLifetime.Singleton)]` or `[Lifetime(DependencyLifetime.Scoped)]` from `Dovetail.DependencyInjection` to change a segment or pipeline's lifetime:
 
 ```csharp
 using Dovetail.DependencyInjection;
 
-[Lifetime(ServiceLifetime.Singleton)]
+[Lifetime(DependencyLifetime.Singleton)]
 public class ExpensiveClientSegment(ExpensiveClient client) : IPipelineSegment<Request, Response>
 {
     public Task<Response> ExecuteAsync(Request request, CancellationToken ct) => client.SendAsync(request, ct);
@@ -232,18 +240,19 @@ public partial class MyPipeline : IPipeline<int, string>
 }
 ```
 
-While `ISegment` only supports up to eight inputs, static segment methods support any number of inputs. This can be a particular benefit when aggregating all of the segment results into the final pipeline output (also sparing the need for a dangling "Assembler" segment):
+While `IPipelineSegment<...>` only supports up to eight inputs, static segment methods support any number of inputs. This can be a particular benefit when aggregating all of the segment results into the final pipeline output (also sparing the need for a dangling "Assembler" segment):
 
 ```csharp
-public partial class ItemPipeline(
-    [Segment] ItemInfoSegment info,
-    [Segment] ItemPriceSegment price,
-    [Segment] ItemImagesSegment images
-) : IPipeline<int, ItemModel>
+public partial class LargePipeline(
+    [Segment] SegmentOne one,
+    [Segment] SegmentTwo two,
+    /* ... */
+    [Segment] TwelveResult three
+) : IPipeline<LargeQuery, LargeModel>
 {
     [Segment]
-    private static ItemModel Aggregate(ItemInfo itemResult, ItemPrice priceResult, ItemImages imagesResult) =>
-        new ItemModel(itemResult, priceResult, imagesResult);
+    private static LargeModel Aggregate(OneResult one, TwoResult two, /* ... */, TwelveResult twelve) =>
+        new LargeModel(/* ... */);
 }
 ```
 
@@ -252,20 +261,20 @@ This also supports cases where it would be cumbersome to create a segment class 
 ```csharp
 public record OrderInfo(OrderId OrderId, CustomerId CustomerId, ...);
 
-public class OrderSegment : ISegment<OrderId, OrderInfo> { ... }
-public class CustomerSegment : ISegment<CustomerId, CustomerInfo> { ... }
+public class OrderSegment : IPipelineSegment<OrderId, OrderInfo> { ... }
+public class CustomerSegment : IPipelineSegment<CustomerId, CustomerInfo> { ... }
 
 public partial class OrderPipeline(
     [Segment] OrderSegment order,
     [Segment] CustomerSegment customer
-)
+) : IPipeline<OrderId, CustomerInfo>
 {
     [Segment]
     private static CustomerId OrderInfoToCustomerId(OrderInfo order) => order.CustomerId;
 }
 ```
 
-A segment method can be `async` too, in which case it may take an optional trailing `CancellationToken`, exactly like a class-based segment:
+A segment method may take an optional trailing `CancellationToken`, whether or not it's `async`, and it can be `async` too, returning `Task<TResult>` instead of `TResult` directly, exactly like a class-based segment:
 
 ```csharp
 [Segment]
@@ -276,7 +285,7 @@ The method must be `static` (DOVE012) and must return a value (either `TResult` 
 
 ### Generic Pipelines
 
-Pipelines and segments can be generic, with segments parameterized by the same type:
+Pipelines and segments can be generic, and a pipeline's own type parameters can flow through to its segments, each segment using a different one:
 
 ```csharp
 public class FirstSegment<T> : IPipelineSegment<Input, T> { ... }
