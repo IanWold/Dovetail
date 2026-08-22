@@ -514,10 +514,6 @@ public class ItemPriceSegmentTests
 
 ## 🐛 Debugging
 
-Most problems in a Dovetail pipeline show up in one of two places: as a compile-time diagnostic, or as a runtime exception from wherever the pipeline actually fails.
-
-### 🚧 Compile-Time First
-
 Because a pipeline's shape is resolved entirely by compile-time type matching, most structural mistakes (i.e. a wrong input type, a cycle, an unreachable segment, or an ambiguous match) are already caught as a [diagnostic](#diagnostics) with an actionable message, not a runtime surprise. If a pipeline behaves unexpectedly, check for a DOVE0xx error before assuming the logic itself is wrong.
 
 Note that a pipeline class with zero `[Segment]`-tagged members produces no diagnostic and no generated code at all, since Dovetail only examines types with at least one `[Segment]` usage. The error you'll see in this case is `CS0535: does not implement interface member` instead of a Dovetail-specific one, which can look like a missing-feature bug rather than a missing `[Segment]` attribute.
