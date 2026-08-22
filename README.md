@@ -246,7 +246,7 @@ public partial class LargePipeline(
     [Segment] SegmentOne one,
     [Segment] SegmentTwo two,
     /* ... */
-    [Segment] TwelveResult three
+    [Segment] TwelveResult twelve
 ) : IPipeline<LargeQuery, LargeModel>
 {
     [Segment]
@@ -355,11 +355,47 @@ public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, Ite
 
 One thing worth being careful about: don't catch `OperationCanceledException` this way. If the pipeline is actually being cancelled, that should propagate normally rather than being swallowed into a fallback value.
 
-### 💥 Concurrent Failures
+### 💥 Concurrent Exceptions
 
-When two or more segments fail at the same time, only **one** exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from multiple segments. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
+When two or more segments throw at the same time, only one exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from multiple segments. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
 
-In practice: if two unrelated segments both throw at once, you'll see whichever one happened to be part of the chain the terminal segment was awaiting when it faulted, not both. If you need visibility into every failure rather than just the one that propagates, [tracing](#tracing) marks *every* failing segment's own activity `Error`, regardless of which single exception makes it back to the caller.
+If you need visibility into every exception rather than just the one that propagates, [tracing](#tracing) marks every throwing segment's own activity `Error`, regardless of which single exception makes it back to the caller.
+
+### 📋 Collecting Multiple Errors
+
+Given the limits of collecting exceptions, a better pattern is to collect error results through the pipeline if you need visibility into multiple error states. Some result pattern that captures error results should be used:
+
+```csharp
+public class DataAccessSegment(IDataRepo repo) : IPipelineSegment<Input, Result<DbRecord>>
+{
+    public async Task<Result<DbRecord>> ExecuteAsync(Input input, CancellationToken ct)
+    {
+        try
+        {
+            return new SuccessResult<DbRecord>(await repo.GetRecordAsync(input, ct));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ErrorResult(ex.Message);
+        }
+    }
+}
+```
+
+Note that, in typical fashion for the result pattern, this does typically propagate `Result<T>` across all the segments, requiring that they both resolve the model from the result object and handle non-success cases:
+
+```csharp
+public class ProcessingSegment(...) : IPipelineSegment<Result<DbRecord>, Result<Model>>
+{
+    public async Task<Result<Model>> ExecuteAsync(Result<DbRecord> dbResult, CancellationToken ct) =>
+        dbResult switch
+        {
+            ErrorResult => ...,
+            SuccessResult { Value: var record } => ...,
+            ...
+        }
+}
+```
 
 ### 🧪 Testing Segments
 
