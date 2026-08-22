@@ -127,7 +127,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             IsStaticSegmentMethod: false,
             StaticSegmentMethodProblem: StaticSegmentMethodProblem.None,
             SegmentIsAsync: true,
-            SegmentAcceptsCancellationToken: true
+            SegmentAcceptsCancellationToken: true,
+            GetMaxConcurrency(containingType)
         );
     }
 
@@ -185,6 +186,26 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return (isPartial, keyword);
     }
 
+    private static int? GetMaxConcurrency(INamedTypeSymbol containingType)
+    {
+        foreach (var attribute in containingType.GetAttributes())
+        {
+            if (attribute.AttributeClass is not { Name: nameof(MaxConcurrencyAttribute) } attributeClass
+                || attributeClass.ContainingNamespace.ToDisplayString() != "Dovetail"
+            )
+            {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is int rawValue)
+            {
+                return rawValue;
+            }
+        }
+
+        return null;
+    }
+
     private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context)
     {
         if (context.TargetSymbol is not IMethodSymbol { ContainingType: { } containingType } methodSymbol)
@@ -211,6 +232,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType), ownKeyword);
+        var maxConcurrency = GetMaxConcurrency(containingType);
 
         if (!methodSymbol.IsStatic)
         {
@@ -230,7 +252,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 IsStaticSegmentMethod: true,
                 StaticSegmentMethodProblem: StaticSegmentMethodProblem.NotStatic,
                 SegmentIsAsync: false,
-                SegmentAcceptsCancellationToken: false
+                SegmentAcceptsCancellationToken: false,
+                maxConcurrency
             );
         }
 
@@ -252,7 +275,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 IsStaticSegmentMethod: true,
                 StaticSegmentMethodProblem: StaticSegmentMethodProblem.HasOwnTypeParameters,
                 SegmentIsAsync: false,
-                SegmentAcceptsCancellationToken: false
+                SegmentAcceptsCancellationToken: false,
+                maxConcurrency
             );
         }
 
@@ -290,7 +314,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 IsStaticSegmentMethod: true,
                 StaticSegmentMethodProblem: StaticSegmentMethodProblem.NoReturnValue,
                 SegmentIsAsync: false,
-                SegmentAcceptsCancellationToken: false
+                SegmentAcceptsCancellationToken: false,
+                maxConcurrency
             );
         }
 
@@ -314,7 +339,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             IsStaticSegmentMethod: true,
             StaticSegmentMethodProblem: StaticSegmentMethodProblem.None,
             SegmentIsAsync: isAsyncTask,
-            SegmentAcceptsCancellationToken: acceptsCancellationToken
+            SegmentAcceptsCancellationToken: acceptsCancellationToken,
+            maxConcurrency
         );
     }
 
@@ -363,6 +389,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (hasErrors)
         {
+            return false;
+        }
+
+        var maxConcurrency = parameters[0].MaxConcurrency;
+        if (maxConcurrency is <= 0)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(InvalidMaxConcurrency, containingTypeLocation, containingType.Name, maxConcurrency));
             return false;
         }
 
@@ -509,7 +542,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        var source = GenerateSource(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, hasActivitySource);
+        var source = GenerateSource(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, hasActivitySource, maxConcurrency);
         context.AddSource($"{containingType.Name}.g.cs", source);
         return true;
     }
@@ -621,7 +654,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return sorted.ToImmutable();
     }
 
-    private static string GenerateSource(TypeDeclarationModel containingType, ImmutableArray<string> pipelineInputTypeNames, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName, bool hasActivitySource)
+    private static string GenerateSource(TypeDeclarationModel containingType, ImmutableArray<string> pipelineInputTypeNames, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName, bool hasActivitySource, int? maxConcurrency)
     {
         segments = SortByDependency(segments, dependencies);
 
@@ -651,9 +684,9 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         builder
             .AppendLine($"partial {containingType.Keyword} {containingType.Name}{containingType.TypeParameterList}")
-            .AppendLine("{")
+            .AppendLine( "{")
             .AppendLine($"    public async global::System.Threading.Tasks.Task<{pipelineResultTypeName}> ExecuteAsync({inputParameter}global::System.Threading.CancellationToken token)")
-            .AppendLine("    {");
+            .AppendLine( "    {");
 
         if (hasActivitySource)
         {
@@ -663,9 +696,16 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 .AppendLine();
         }
 
-        builder.AppendLine("        using var cts = global::System.Threading.CancellationTokenSource.CreateLinkedTokenSource(token);")
+        builder
+            .AppendLine("        using var cts = global::System.Threading.CancellationTokenSource.CreateLinkedTokenSource(token);")
             .AppendLine("        var linkedToken = cts.Token;")
             .AppendLine();
+
+        if (maxConcurrency is int concurrencyLimit)
+        {
+            builder.AppendLine($"        using var concurrencyGate = new global::System.Threading.SemaphoreSlim({concurrencyLimit});")
+                .AppendLine();
+        }
 
         var isValueTypePipeline = containingType.Keyword is "struct" or "record struct";
 
@@ -688,12 +728,12 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         builder.AppendLine()
-            .AppendLine("        try")
-            .AppendLine("        {")
+            .AppendLine( "        try")
+            .AppendLine( "        {")
             .AppendLine($"            return await {terminalParameterName}Task.ConfigureAwait(false);")
-            .AppendLine("        }")
+            .AppendLine( "        }")
             .AppendLine(hasActivitySource ? "        catch (global::System.Exception ex)" : "        catch")
-            .AppendLine("        {");
+            .AppendLine( "        {");
 
         if (hasActivitySource)
         {
@@ -741,25 +781,71 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             var invocation = segment.IsStaticMethod ? $"{invocationTarget}({argList})" : $"{invocationTarget}.ExecuteAsync({argList})";
             var callExpression = segment.IsAsync ? $"await {invocation}.ConfigureAwait(false)" : invocation;
 
-            if (hasActivitySource)
+            if (maxConcurrency is not null && hasActivitySource)
             {
                 builder
                     .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async()")
-                    .AppendLine("        {")
+                    .AppendLine( "        {")
+                    .AppendLine( "            await concurrencyGate.WaitAsync(linkedToken).ConfigureAwait(false);")
+                    .AppendLine( "            try")
+                    .AppendLine( "            {")
+                    .AppendLine($"                using var segmentActivity = global::Dovetail.DovetailActivitySource.Instance.StartActivity(\"{containingType.Name}.{segment.ParameterName}\");")
+                    .AppendLine($"                segmentActivity?.SetTag(\"dovetail.pipeline\", \"{fullyQualifiedPipelineName}\");")
+                    .AppendLine($"                segmentActivity?.SetTag(\"dovetail.segment\", \"{segment.ParameterName}\");")
+                    .AppendLine($"                segmentActivity?.SetTag(\"dovetail.segment.type\", \"{segment.SegmentTypeName}\");")
+                    .AppendLine( "                try")
+                    .AppendLine( "                {")
+                    .AppendLine($"                    return {callExpression};")
+                    .AppendLine( "                }")
+                    .AppendLine( "                catch (global::System.Exception ex)")
+                    .AppendLine( "                {")
+                    .AppendLine( "                    segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);")
+                    .AppendLine( "                    throw;")
+                    .AppendLine( "                }")
+                    .AppendLine( "            }")
+                    .AppendLine( "            finally")
+                    .AppendLine( "            {")
+                    .AppendLine( "                concurrencyGate.Release();")
+                    .AppendLine( "            }")
+                    .AppendLine( "        }")
+                    .AppendLine();
+            }
+            else if (maxConcurrency is not null)
+            {
+                builder
+                    .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async()")
+                    .AppendLine( "        {")
+                    .AppendLine( "            await concurrencyGate.WaitAsync(linkedToken).ConfigureAwait(false);")
+                    .AppendLine( "            try")
+                    .AppendLine( "            {")
+                    .AppendLine($"                return {callExpression};")
+                    .AppendLine( "            }")
+                    .AppendLine( "            finally")
+                    .AppendLine( "            {")
+                    .AppendLine( "                concurrencyGate.Release();")
+                    .AppendLine( "            }")
+                    .AppendLine( "        }")
+                    .AppendLine();
+            }
+            else if (hasActivitySource)
+            {
+                builder
+                    .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async()")
+                    .AppendLine( "        {")
                     .AppendLine($"            using var segmentActivity = global::Dovetail.DovetailActivitySource.Instance.StartActivity(\"{containingType.Name}.{segment.ParameterName}\");")
                     .AppendLine($"            segmentActivity?.SetTag(\"dovetail.pipeline\", \"{fullyQualifiedPipelineName}\");")
                     .AppendLine($"            segmentActivity?.SetTag(\"dovetail.segment\", \"{segment.ParameterName}\");")
                     .AppendLine($"            segmentActivity?.SetTag(\"dovetail.segment.type\", \"{segment.SegmentTypeName}\");")
-                    .AppendLine("            try")
-                    .AppendLine("            {")
+                    .AppendLine( "            try")
+                    .AppendLine( "            {")
                     .AppendLine($"                return {callExpression};")
-                    .AppendLine("            }")
-                    .AppendLine("            catch (global::System.Exception ex)")
-                    .AppendLine("            {")
-                    .AppendLine("                segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);")
-                    .AppendLine("                throw;")
-                    .AppendLine("            }")
-                    .AppendLine("        }")
+                    .AppendLine( "            }")
+                    .AppendLine( "            catch (global::System.Exception ex)")
+                    .AppendLine( "            {")
+                    .AppendLine( "                segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);")
+                    .AppendLine( "                throw;")
+                    .AppendLine( "            }")
+                    .AppendLine( "        }")
                     .AppendLine();
             }
             else

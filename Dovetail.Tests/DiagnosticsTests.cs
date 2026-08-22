@@ -249,4 +249,27 @@ public class DiagnosticsTests
 
         AssertSingleDiagnostic(source, "DOVE009");
     }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyIsNotPositive()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            [MaxConcurrency(0)]
+            public partial class ZeroConcurrencyPipeline([Segment] FooSegment foo) : IPipeline<int, string>;
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE019");
+    }
 }
