@@ -33,7 +33,7 @@ Dovetail extensively checks your pipelines with clear, helpful diagnostic messag
 
 **Compile-time correctness, helpful diagnostics:** Every dependency within the pipeline is checked when your project builds, not when a request hits production. A missing dependency, two segments producing the same type, a cycle: these are compile errors with a specific, located diagnostic, not bugs you find at 2 AM. There's no string-keyed registration, no reflection-based service location, no runtime graph to misconfigure. The type system is the only source of truth.
 
-**Real parallelism, no boilerplate:** Segments that don't depend on each other run concurrently automatically; you never hand-write `Task.WhenAll` and you never accidentally serialize independent work by awaiting too early. Cancellation propagation and draining in-flight work when something fails are the kind of thing that's easy to get subtly wrong by hand.
+**Real parallelism, no boilerplate:** Segments that don't depend on each other run concurrently automatically; you never hand-write `Task.WhenAll` and you never accidentally serialize independent work by awaiting too early. Cancellation propagation, draining in-flight work when something fails, and bounding concurrency are all the kind of thing that's easy to get subtly wrong by hand.
 
 **Generated code you can actually read:** `ExecuteAsync` is plain async/await, nothing you couldn't have written yourself, just correctly and without the tedium. No runtime reflection, no DI container in the hot path, nothing hidden behind the generator once your project is built.
 
@@ -293,6 +293,25 @@ private static async Task<Result> SomeSegment(Input input, CancellationToken ct)
 
 The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
 
+### 🚦 Managing Concurrency
+
+Add `[MaxConcurrency(n)]` to a pipeline to bound how many of its segments may run at once:
+
+```csharp
+[MaxConcurrency(4)]
+public partial class ItemPipeline(
+    [Segment] ItemInfoSegment info,
+    [Segment] ItemPriceSegment price,
+    [Segment] ItemImagesSegment images
+) : IPipeline<int, ItemModel>;
+```
+
+Without it, every eligible segment starts at once. With it, each segment's execution is gated behind a shared semaphore instead, so at most `n` are ever running concurrently. It applies uniformly to every kind of segment, instance-based or static `[Segment]` methods alike, and composes correctly with cancellation: a segment still waiting for a free slot when a sibling fails is cancelled out of its wait immediately, rather than left waiting.
+
+The limit is per-pipeline, not global: a nested pipeline used as a segment ([Pipelines-as-Segments](#pipelines-as-segments)) fans out (and throttles, if it declares its own `[MaxConcurrency(n)]`) independently of its parent.
+
+`n` must be a positive integer (DOVE019). Omit the attribute to leave concurrency unbounded, which is the default.
+
 ### 🪈 Generic Pipelines
 
 Pipelines and segments can be generic, and a pipeline's own type parameters can flow through to its segments, each segment using a different one:
@@ -353,7 +372,7 @@ Segments that don't depend on each other run genuinely concurrently, not just as
 
 * **A sibling's failure doesn't stop an independent segment's side effects.** When one segment fails, Dovetail cancels a shared token and drains the rest, but that's cooperative, not preemptive, as a segment that doesn't check the token keeps running until it finishes. If the code is running on a branch independent of the failure, it can complete in full even though the pipeline as a whole ends up throwing. Put side-effecting segments as late in the DAG as you reasonably can, so they only run once everything upstream of them has actually succeeded, rather than racing alongside branches that might fail.
 
-* **Nothing throttles fan-out.** Every eligible segment starts at once, with no built-in max-degree-of-parallelism. A pipeline fanning out to a few dozen segments that each call an external API fires that many concurrent calls simultaneously. Therefore connection-pool exhaustion and rate-limit responses are yours to guard against (a rate-limited `HttpClient`, a `SemaphoreSlim` inside a segment, or similar). It's also easy to undercount: a nested pipeline used as a segment ([Pipelines-as-Segments](#pipelines-as-segments)) fans out its own segments too, so the real concurrency of an outer pipeline isn't just its top-level segment count.
+* **Fan-out is unbounded by default.** Every eligible segment starts at once, so a pipeline fanning out to a few dozen segments that each call an external API fires that many concurrent calls simultaneously — connection-pool exhaustion and rate-limit responses are a real risk. [`[MaxConcurrency(n)]`](#managing-concurrency) bounds this per pipeline, but it's still easy to undercount the real concurrency of an outer pipeline: the limit doesn't compound automatically, so a nested pipeline used as a segment ([Pipelines-as-Segments](#pipelines-as-segments)) fans out independently of its parent's limit.
 
 ### 💥 Exception Handling
 
@@ -551,3 +570,4 @@ Segments are plain, [independently testable](#testing-segments) classes, so repr
 | DOVE016 | A `[Segment]` method can't have its own type parameters; it can use the pipeline's, but can't introduce new ones. |
 | DOVE017 | Two or more segments implement the same `IPipelineSegment<...>` interface, so `AddPipelines()` can't tell which one to register for it. |
 | DOVE018 | A segment's input ambiguously matches both a pipeline input and another segment's result; give one of them a distinct type. |
+| DOVE019 | `[MaxConcurrency(n)]`'s value must be 1 or greater; use a positive integer, or remove the attribute. |
