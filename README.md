@@ -55,7 +55,6 @@ Most notably, Dovetail is for managing the complexity of aggregation logic that 
 
 * **Streaming or incremental results:** One execution produces one final result; Dovetail does not support `IAsyncEnumerable`, nor progressive rendering as branches complete.
 * **Long-running or durable workflows:** Dovetail has no persistence, no checkpointing, and no resuming after a crash. Dovetail is an in-process, single-execution composition helper, not a durable orchestrator.
-* **Heavy CPU-bound work:** The concurrency model overlaps I/O waits and doesn't spread compute across cores. If your "segments" are actually CPU-heavy, this won't help beyond what `async`/`await` already gives you.
 * **Dynamic pipeline shapes:** The DAG is resolved entirely by compile-time type matching, so the shape of the pipeline can't dynamically change at runtime. Dovetail does allow a limited degree of [conditional segment execution](#conditional-segment-execution), but only within the context of a rigid, compile-time graph shape.
 
 ## 🚀 Quickstart
@@ -367,6 +366,8 @@ Note that the tracing calls are still nearly free if nothing's listening: `Activ
 ### ⚡ Concurrency
 
 Segments that don't depend on each other run genuinely concurrently, not just asynchronously in sequence, which results in several considerations to design around up front, beyond exception/error handling (see below):
+
+* **Concurrency comes from overlapping I/O, not from spreading compute across cores.** A segment that's actually CPU-heavy runs no differently than it would in hand-written async code without an explicit `Task.Run`: Dovetail doesn't parallelize it for you, but it doesn't get in the way either. Wrap the computation in `Task.Run` yourself if you want it to actually run on another thread.
 
 * **Shared dependencies need to tolerate concurrent use.** If two segments in the same pipeline take the same injected instance (i.e. an EF Core `DbContext`, a non-thread-safe cache client, anything not built for concurrent access) they can genuinely collide mid-execution, not just under load. This is different from a DI lifetime mistake leaking state across executions; here, two segments are touching the same object during one execution. Give each segment its own instance (typically `Scoped` per execution, or `Transient`), or use a dependency that's actually safe to share.
 
