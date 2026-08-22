@@ -41,7 +41,7 @@ Dovetail extensively checks your pipelines with clear, helpful diagnostic messag
 
 ### 🎯 Who Dovetail Is For
 
-Dovetail is designed particularly for composition and aggregation workflows: fanning out to several independent services or data sources and merging the results into one response. BFF-style endpoints, product-detail-page assembly, dashboard and summary views, GraphQL-style resolvers implemented over REST. Dovetail is best used for managing complexity in this domain.
+Dovetail is designed for managing complexity in composition and aggregation workflows: fanning out to several independent services or data sources and merging the results into one response. Specific use cases include BFF-style endpoints, dashboard and summary views, or GraphQL-style resolvers implemented over REST.
 
 In addition, Dovetail works quite well for:
 
