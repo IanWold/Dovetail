@@ -43,7 +43,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor DuplicateSegmentResult = new(
         id: "DOVE005",
         title: "More than one segment produces the same type",
-        messageFormat: "Segments {0} all produce '{1}'; each type may be produced by only one segment in a pipeline — change one of their result types, or remove the extras",
+        messageFormat: "Segments {0} all produce '{1}'; each type may be produced by only one segment in a pipeline; change one of their result types, or remove the extras",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -70,7 +70,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor UnreachableSegment = new(
         id: "DOVE008",
         title: "Segment is unreachable from the pipeline result",
-        messageFormat: "Parameter '{0}' is never used, directly or transitively, by the segment that produces '{1}'; its failures could go unobserved, so every segment must feed the pipeline result — remove this segment, or have another segment consume its result on the way to '{1}'",
+        messageFormat: "Parameter '{0}' is never used, directly or transitively, by the segment that produces '{1}'; its failures could go unobserved, so every segment must feed the pipeline result; remove this segment, or have another segment consume its result on the way to '{1}'",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -79,7 +79,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor DuplicatePipelineInput = new(
         id: "DOVE009",
         title: "The pipeline declares the same input type more than once",
-        messageFormat: "'{0}' declares more than one input of type {1}; each of a pipeline's own input types must be unique — wrap one of the duplicates in its own type, or combine them into a single input",
+        messageFormat: "'{0}' declares more than one input of type {1}; each of a pipeline's own input types must be unique; wrap one of the duplicates in its own type, or combine them into a single input",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -133,7 +133,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor NestedInGenericType = new(
         id: "DOVE015",
         title: "A pipeline can't be nested inside a generic type",
-        messageFormat: "'{0}' is nested inside generic type '{1}'; Dovetail doesn't support generating into a pipeline nested inside a generic type — move '{0}' out of '{1}', or make '{1}' non-generic if it doesn't need to be",
+        messageFormat: "'{0}' is nested inside generic type '{1}'; Dovetail doesn't support generating into a pipeline nested inside a generic type; move '{0}' out of '{1}', or make '{1}' non-generic if it doesn't need to be",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -142,7 +142,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor SegmentMethodCannotHaveOwnTypeParameters = new(
         id: "DOVE016",
         title: "A [Segment] method can't have its own type parameters",
-        messageFormat: "'{0}' declares [Segment] on method '{1}', which has its own type parameters; a segment method can use the pipeline's type parameters, but can't introduce new ones of its own — remove '{1}''s type parameters",
+        messageFormat: "'{0}' declares [Segment] on method '{1}', which has its own type parameters; a segment method can use the pipeline's type parameters, but can't introduce new ones of its own; remove '{1}''s type parameters",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -151,7 +151,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor DuplicateSegmentInterfaceImplementation = new(
         id: "DOVE017",
         title: "More than one segment implements the same IPipelineSegment<...> interface",
-        messageFormat: "Segments {0} all implement '{1}'; AddPipelines() registers every segment against every IPipelineSegment<...> interface it implements, so it can't tell which of these to use for '{1}' — give each segment a distinct input or result type so their shapes no longer match",
+        messageFormat: "Segments {0} all implement '{1}'; AddPipelines() registers every segment against every IPipelineSegment<...> interface it implements, so it can't tell which of these to use for '{1}'; give each segment a distinct input or result type so their shapes no longer match",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true

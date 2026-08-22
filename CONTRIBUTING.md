@@ -19,8 +19,8 @@ dotnet test
 
 The solution is [Dovetail.slnx](Dovetail.slnx), with two projects:
 
-- **Dovetail** — the public API (`IPipeline`, `IPipelineSegment`, `SegmentAttribute`) and both source generators, shipped as a single package.
-- **Dovetail.Tests** — xUnit v3 tests, including generator tests that compile sample source through `CSharpGeneratorDriver` and, for the more involved cases, actually emit and load the resulting assembly to run the generated code and assert on real behavior.
+- **Dovetail:** the public API (`IPipeline`, `IPipelineSegment`, `SegmentAttribute`) and both source generators, shipped as a single package.
+- **Dovetail.Tests:** xUnit v3 tests, including generator tests that compile sample source through `CSharpGeneratorDriver` and, for the more involved cases, actually emit and load the resulting assembly to run the generated code and assert on real behavior.
 
 If you're changing the generator, a test that drives it against a small sample pipeline (see `PipelineSourceGeneratorTests.cs`) is the fastest way to see what it actually emits.
 

@@ -8,7 +8,7 @@ internal static class IndexEndpoints
         {
             app.MapGet("/", static () => Results.Ok(new
             {
-                Message = "Dovetail e-commerce example — a BFF aggregating several in-memory services into three pipelines.",
+                Message = "Dovetail e-commerce example: a BFF aggregating several in-memory services into three pipelines.",
                 Try = new[]
                 {
                     "GET /products/{sku}          e.g. /products/1        (try /products/7 for the inventory fallback, /products/999 for a real 404)",

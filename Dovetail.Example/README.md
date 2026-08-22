@@ -22,14 +22,14 @@ This is built akin to a standard n-tier API, the standard layers are top-level d
 
 This project contains four pipelines, three of them exposed as endpoints:
 
-* **`ProductDetailPipeline`** — `GET /products/{sku}`: fans out to catalog, pricing, inventory, reviews, and recommendations. Pricing and recommendations both depend on the catalog lookup's result rather than the raw SKU, showing a more complicated dependency graph.
-* **`CartSummaryPipeline`** — `GET /cart/{userId}/{cartId}`: a two-input pipeline (`IPipeline<UserId, CartId, TResult>`). Its cart-contents segment needs both inputs directly; its promotions and shipping segments each mix a pipeline input with another segment's result in the same parameter list.
-* **`OrderConfirmationPipeline`** — `GET /orders/{orderId}`: a larger, multi-level chain.
-* **`CustomerProfilePipeline`** — not exposed directly, but implements both `IPipeline<UserId, CustomerProfile>` and the matching `IPipelineSegment<UserId, CustomerProfile>` shape, built from two small segments: `CustomerAccountSegment` and `LoyaltyStatusSegment`.
+* **`ProductDetailPipeline`:** `GET /products/{sku}`: fans out to catalog, pricing, inventory, reviews, and recommendations. Pricing and recommendations both depend on the catalog lookup's result rather than the raw SKU, showing a more complicated dependency graph.
+* **`CartSummaryPipeline`:** `GET /cart/{userId}/{cartId}`: a two-input pipeline (`IPipeline<UserId, CartId, TResult>`). Its cart-contents segment needs both inputs directly; its promotions and shipping segments each mix a pipeline input with another segment's result in the same parameter list.
+* **`OrderConfirmationPipeline`:** `GET /orders/{orderId}`: a larger, multi-level chain.
+* **`CustomerProfilePipeline`:** not exposed directly, but implements both `IPipeline<UserId, CustomerProfile>` and the matching `IPipelineSegment<UserId, CustomerProfile>` shape, built from two small segments: `CustomerAccountSegment` and `LoyaltyStatusSegment`.
 
 All pipelines demonstrate the pattern of having the final `[Segment]` in each one being a `private static` method declared right in the pipeline's own body (see the [main README](../README.md#static-segment-methods)). `OrderConfirmationPipeline` uses the same mechanism for the `OrderId` -> `UserId` transformation allowing the use of the `CustomerProfilePipeline`.
 
-Every ID (`Sku`, `UserId`, `CartId`, `OrderId`) is its own wrapper type around an `int` rather than a bare primitive — see [`Business/Ids.cs`](Business/Ids.cs). Dovetail matches segment inputs purely by type, so without that, a `UserId` and an `OrderId` would be indistinguishable to the generator.
+Every ID (`Sku`, `UserId`, `CartId`, `OrderId`) is its own wrapper type around an `int` rather than a bare primitive (see [`Business/Ids.cs`](Business/Ids.cs)). Dovetail matches segment inputs purely by type, so without that, a `UserId` and an `OrderId` would be indistinguishable to the generator.
 
 ### Things worth trying
 

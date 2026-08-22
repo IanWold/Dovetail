@@ -24,7 +24,7 @@ Dovetail is a Roslyn source generator for building async pipelines out of compos
 
 **Real parallelism, no boilerplate:** Segments that don't depend on each other run concurrently automatically; you never hand-write `Task.WhenAll` and you never accidentally serialize independent work by awaiting too early. Cancellation propagation and draining in-flight work when something fails are the kind of thing that's easy to get subtly wrong by hand.
 
-**Generated code you can actually read:** `ExecuteAsync` is plain async/await — nothing you couldn't have written yourself, just correctly and without the tedium. No runtime reflection, no DI container in the hot path, nothing hidden behind the generator once your project is built.
+**Generated code you can actually read:** `ExecuteAsync` is plain async/await, nothing you couldn't have written yourself, just correctly and without the tedium. No runtime reflection, no DI container in the hot path, nothing hidden behind the generator once your project is built.
 
 **Lightweight and quick to set up:** One NuGet package, no forced dependencies, no base classes to inherit, no configuration files, no startup registration required. A segment is a class implementing one interface; a pipeline is a partial class with a few `[Segment]` attributes.
 
@@ -105,10 +105,10 @@ ItemModel model = await pipeline.ExecuteAsync(itemId, cancellationToken);
 
 Dovetail reads each segment's `IPipelineSegment<...>` interface to learn its input and result types, then wires the pipeline together purely by matching those types:
 
-- A segment's input is satisfied by the pipeline's own input, or by another segment whose result matches — no other segment may produce the same type.
+- A segment's input is satisfied by the pipeline's own input, or by another segment whose result matches. No other segment may produce the same type.
 - The segment whose result matches the pipeline's own result type becomes the terminal step.
 - The generated `ExecuteAsync` starts every segment concurrently, awaits the terminal step, and returns its result.
-- If anything fails, Dovetail cancels a shared token and waits for the rest of the in-flight segments to unwind before rethrowing — nothing is left running or unobserved.
+- If anything fails, Dovetail cancels a shared token and waits for the rest of the in-flight segments to unwind before rethrowing, leaving nothing running or unobserved.
 
 Roughly, the pipeline above generates:
 
@@ -155,7 +155,7 @@ public partial class ItemPipeline
 }
 ```
 
-(Simplified for readability — the generator fully qualifies every type it emits.)
+(Simplified for readability; the generator fully qualifies every type it emits.)
 
 ### Dependency Injection
 
@@ -194,7 +194,7 @@ public class ExpensiveClientSegment(ExpensiveClient client) : IPipelineSegment<R
 }
 ```
 
-Each non-generic segment is also registered against every `IPipelineSegment<...>` interface it implements, so it resolves whether a pipeline asks for it by its concrete type or by any of those interfaces — a segment implementing more than one `IPipelineSegment<...>` interface (each with its own shape) is registered against each of them. Generic segments are registered by concrete type only, since there's no way to express a DI service type that mixes closed and open type arguments.
+Each non-generic segment is also registered against every `IPipelineSegment<...>` interface it implements, so it resolves whether a pipeline asks for it by its concrete type or by any of those interfaces. A segment implementing more than one `IPipelineSegment<...>` interface (each with its own shape) is registered against each of them. Generic segments are registered by concrete type only, since there's no way to express a DI service type that mixes closed and open type arguments.
 
 If two segments implement the exact same `IPipelineSegment<...>` interface, `AddPipelines()` wouldn't know which one to use for that interface, so this is a compile error (DOVE017).
 
@@ -313,7 +313,7 @@ public partial class ItemInfoPipeline(
 
 Since both interfaces declare an identical `Task<ItemInfo> ExecuteAsync(int, CancellationToken)`, the one `ExecuteAsync` Dovetail already generates for `IPipeline<int, ItemInfo>` satisfies `IPipelineSegment<int, ItemInfo>` too, so there's nothing extra for you to write. `ItemInfoPipeline` can now be called directly, or used as `[Segment] ItemInfoPipeline info` inside a larger pipeline, and either way it's the same generated method doing the work.
 
-This only applies when the shapes match. A type that implements `IPipelineSegment<...>` without a matching `IPipeline<...>` — the ordinary case still needs its `ExecuteAsync` hand-written, exactly like any other segment.
+This only applies when the shapes match. A type that implements `IPipelineSegment<...>` without a matching `IPipeline<...>` still needs its `ExecuteAsync` hand-written, exactly like any other segment.
 
 ### Tracing
 
@@ -386,7 +386,7 @@ public class ItemPriceSegmentTests
 }
 ```
 
-`ExecuteAsync` itself isn't something you typically need to unit test — Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
+`ExecuteAsync` itself isn't something you typically need to unit test as Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
 
 ## Diagnostics
 

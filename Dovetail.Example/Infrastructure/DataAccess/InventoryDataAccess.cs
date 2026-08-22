@@ -10,7 +10,7 @@ internal class InventoryDataAccess
         [4] = 8,
         [5] = 120,
         [6] = 3,
-        // Sku 7 is intentionally missing — GetUnitsInStockAsync throws for it below.
+        // Sku 7 is intentionally missing - GetUnitsInStockAsync throws for it below.
         [8] = 20,
     };
 

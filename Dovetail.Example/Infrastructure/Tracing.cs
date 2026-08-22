@@ -18,7 +18,7 @@ internal static class Tracing
             {
                 var indent = activity.Parent is not null ? "    " : "";
                 var status = activity.Status == ActivityStatusCode.Error ? $" [ERROR: {activity.StatusDescription}]" : "";
-                Console.WriteLine($"{indent}[dovetail] {activity.OperationName} — {activity.Duration.TotalMilliseconds:F0}ms{status}");
+                Console.WriteLine($"{indent}[dovetail] {activity.OperationName} - {activity.Duration.TotalMilliseconds:F0}ms{status}");
             }
         };
 
