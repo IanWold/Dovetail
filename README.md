@@ -116,10 +116,10 @@ ItemModel model = await pipeline.ExecuteAsync(itemId, cancellationToken);
 
 Dovetail reads each segment's `IPipelineSegment<...>` interface to learn its input and result types, then wires the pipeline together purely by matching those types:
 
-- A segment's input is satisfied by the pipeline's own input, or by another segment whose result matches. No other segment may produce the same type.
-- The segment whose result matches the pipeline's own result type becomes the terminal step.
-- The generated `ExecuteAsync` starts every segment concurrently, awaits the terminal step, and returns its result.
-- If anything fails, Dovetail cancels a shared token and waits for the rest of the in-flight segments to unwind before rethrowing, leaving nothing running or unobserved.
+* A segment's input is satisfied by the pipeline's own input, or by another segment whose result matches. No other segment may produce the same type.
+* The segment whose result matches the pipeline's own result type becomes the terminal step.
+* The generated `ExecuteAsync` starts every segment concurrently, awaits the terminal step, and returns its result.
+* If anything fails, Dovetail cancels a shared token and waits for the rest of the in-flight segments to unwind before rethrowing, leaving nothing running or unobserved.
 
 Roughly, the pipeline above generates:
 
