@@ -478,6 +478,45 @@ public class ItemPriceSegmentTests
 
 `ExecuteAsync` itself isn't something you typically need to unit test as Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
 
+## 🐛 Debugging
+
+Most problems in a Dovetail pipeline show up in one of two places: as a compile-time diagnostic, or as a runtime exception from wherever the pipeline actually fails.
+
+### 🚧 Compile-Time First
+
+Because a pipeline's shape is resolved entirely by compile-time type matching, most structural mistakes (i.e. a wrong input type, a cycle, an unreachable segment, or an ambiguous match) are already caught as a [diagnostic](#diagnostics) with an actionable message, not a runtime surprise. If a pipeline behaves unexpectedly, check for a DOVE0xx error before assuming the logic itself is wrong.
+
+Note that a pipeline class with zero `[Segment]`-tagged members produces no diagnostic and no generated code at all, since Dovetail only examines types with at least one `[Segment]` usage. The error you'll see in this case is `CS0535: does not implement interface member` instead of a Dovetail-specific one, which can look like a missing-feature bug rather than a missing `[Segment]` attribute.
+
+### 📄 Reading the Generated Source
+
+The fastest way to understand what a pipeline actually executes is to read the code Dovetail wrote for it rather than infer it. Dovetail outputs relatively simple, human-readable code. Add this to a project to write the generated files to disk:
+
+```xml
+<PropertyGroup>
+  <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  <CompilerGeneratedFilesOutputPath>Generated</CompilerGeneratedFilesOutputPath>
+</PropertyGroup>
+```
+
+You'll find the generated code in `Generated/Dovetail`. Like any other file, you can set breakpoints in the generated source.
+
+### 🏎️ Concurrency and Exceptions
+
+Every segment starts running immediately, but only the segment producing the pipeline's result is directly awaited; every other segment is guaranteed to be awaited transitively somewhere along the way there (that's what [DOVE008](#diagnostics) enforces). When two or more segments fail around the same time, it comes down to a race for which exception actually reaches the caller (see [Exception Handling](#exception-handling)).
+
+Note that as a consequence, if you have "break on all exceptions" enabled you'll see a first-chance exception break for _every_ failing segment even though only one of them ends up as the exception `ExecuteAsync` actually throws. The extra breaks aren't extra bugs.
+
+Further, the `CancellationToken` a segment receives isn't the same token instance passed into `ExecuteAsync`. Rather, Dovetail links it internally so it can cancel sibling segments as soon as one fails. This only matters if you're comparing token instances directly.
+
+### 🔒 Dependency Injection Lifetimes
+
+`[Lifetime(...)]` defaults every pipeline and segment to `Transient`, which is the safe default. The risk shows up once you opt into `Scoped` or `Singleton`: any mutable state your own segment holds is now shared across concurrent pipeline executions. Turning on `ValidateScopes` and `ValidateOnBuild` when building your `ServiceProvider` is good practice generally, and it'll catch a `Scoped` segment landing inside a longer-lived pipeline at startup instead of at first request.
+
+### 🔬 Isolating a Failure
+
+Segments are plain, [independently testable](#testing-segments) classes, so reproduce a suspected bug by exercising the segment directly instead of running the whole pipeline. If you've adopted the [Result pattern](#collecting-multiple-errors) for multi-error collection, remember that debugging shifts from catching an exception to inspecting the returned `Result`.
+
 ## 🩺 Diagnostics
 
 | ID | Meaning |
