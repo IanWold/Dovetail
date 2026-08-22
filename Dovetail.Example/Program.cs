@@ -13,6 +13,7 @@ builder.Services.AddSingleton<LoyaltyDataAccess>();
 builder.Services.AddSingleton<OrderDataAccess>();
 builder.Services.AddSingleton<PaymentDataAccess>();
 builder.Services.AddSingleton<ShipmentTrackingDataAccess>();
+builder.Services.AddSingleton<FeatureFlags>();
 
 builder.Services.AddPipelines();
 

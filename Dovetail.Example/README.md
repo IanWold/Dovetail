@@ -22,10 +22,10 @@ This is built akin to a standard n-tier API, the standard layers are top-level d
 
 This project contains four pipelines, three of them exposed as endpoints:
 
-* **`ProductDetailPipeline`:** `GET /products/{sku}`: fans out to catalog, pricing, inventory, reviews, and recommendations. Pricing and recommendations both depend on the catalog lookup's result rather than the raw SKU, showing a more complicated dependency graph.
+* **`ProductDetailPipeline`:** `GET /products/{sku}`: fans out to catalog, pricing, inventory, reviews, and recommendations. Pricing and recommendations both depend on the catalog lookup's result rather than the raw SKU, showing a more complicated dependency graph. Also carries `[MaxConcurrency(2)]` (see [Managing Concurrency](../README.md#managing-concurrency) in the main README), so at most 2 of its segments ever run at once.
 * **`CartSummaryPipeline`:** `GET /cart/{userId}/{cartId}`: a two-input pipeline (`IPipeline<UserId, CartId, TResult>`). Its cart-contents segment needs both inputs directly; its promotions and shipping segments each mix a pipeline input with another segment's result in the same parameter list.
-* **`OrderConfirmationPipeline`:** `GET /orders/{orderId}`: a larger, multi-level chain.
-* **`CustomerProfilePipeline`:** not exposed directly, but implements both `IPipeline<UserId, CustomerProfile>` and the matching `IPipelineSegment<UserId, CustomerProfile>` shape, built from two small segments: `CustomerAccountSegment` and `LoyaltyStatusSegment`.
+* **`OrderConfirmationPipeline`:** `GET /orders/{orderId}`: a larger, multi-level chain. Its customer-profile lookup goes through `ConditionalCustomerProfileSegment`, which demonstrates [conditional segment execution](../README.md#conditional-segment-execution) over a whole nested pipeline: the lookup runs only while the `Features:EnableCustomerProfileLookup` flag is on, falling back to a minimal, unresolved profile otherwise.
+* **`CustomerProfilePipeline`:** not exposed directly, built from two small segments (`CustomerAccountSegment` and `LoyaltyStatusSegment`), and reached from `OrderConfirmationPipeline` only through `ConditionalCustomerProfileSegment`'s conditional wrapper.
 
 All pipelines demonstrate the pattern of having the final `[Segment]` in each one being a `private static` method declared right in the pipeline's own body (see the [main README](../README.md#static-segment-methods)). `OrderConfirmationPipeline` uses the same mechanism for the `OrderId` -> `UserId` transformation allowing the use of the `CustomerProfilePipeline`.
 
@@ -36,12 +36,14 @@ Every ID (`Sku`, `UserId`, `CartId`, `OrderId`) is its own wrapper type around a
 | Request | What it shows |
 |---|---|
 | `GET /products/1` | A normal, healthy fan-out/fan-in. |
-| `GET /products/7` | The warehouse feed for this one SKU always times out. `InventorySegment` catches it and degrades to `Unknown` stock instead of failing the whole page (the [optional/fallback pattern](../README.md#error-handling)) from the main README. Watch the console trace: `inventory` completes cleanly, no error. |
+| `GET /products/7` | The warehouse feed for this one SKU always times out. `InventorySegment` catches it and degrades to `Unknown` stock instead of failing the whole page (the [optional/fallback pattern](../README.md#exception-handling)) from the main README. Watch the console trace: `inventory` completes cleanly, no error. |
 | `GET /products/999` | A SKU that doesn't exist. This one _isn't_ caught, so the whole pipeline fails. Watch the console trace show every sibling segment get cancelled and drained before the 404 comes back. |
+| `GET /products/1`, watching the console trace | `ProductDetailPipeline` is `[MaxConcurrency(2)]`-limited: `catalog`, `inventory`, and `reviews` could otherwise all start on the raw SKU at once, but only 2 ever overlap. |
 | `GET /cart/1/1` | A full cart with promotions and standard shipping. |
 | `GET /cart/2/2` | An empty cart. Every segment still runs, just against zero items. |
 | `GET /orders/1` | A shipped order. |
 | `GET /orders/2` | A paid order that hasn't shipped yet. |
+| `GET /orders/1` with the app started as `Features__EnableCustomerProfileLookup=false dotnet run --project Dovetail.Example` | `ConditionalCustomerProfileSegment` skips `CustomerProfilePipeline` entirely; `customer` in the response falls back to a minimal, unresolved profile instead. |
 | `GET /cart/1/1` then `GET /orders/1` | Compare the console traces: `account`/`loyalty` appear directly under `CartSummaryPipeline`, but nested under `CustomerProfilePipeline` when reached through `OrderConfirmationPipeline`, showing the same two segments reused two different ways. |
 
 ### Tracing

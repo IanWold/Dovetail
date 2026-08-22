@@ -3,11 +3,13 @@ using Dovetail;
 namespace Dovetail.Example.Business;
 
 /// <summary>
-/// Demonstrates more complex scenario with a pipeline reused as a segment and static segment transforming order details to uesr id
+/// Demonstrates more complex scenario with a pipeline reused as a segment and static segment transforming order details to uesr id.
+/// The customer profile lookup is itself wrapped in <see cref="ConditionalCustomerProfileSegment"/>, demonstrating conditional
+/// segment execution over a whole nested pipeline rather than a single segment.
 /// </summary>
 internal partial class OrderConfirmationPipeline(
     [Segment] OrderDetailsSegment order,
-    [Segment] CustomerProfilePipeline customer,
+    [Segment] ConditionalCustomerProfileSegment customer,
     [Segment] PaymentStatusSegment payment,
     [Segment] ShipmentTrackingSegment shipment
 ) : IPipeline<OrderId, OrderConfirmation>
