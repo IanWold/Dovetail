@@ -16,7 +16,18 @@ Build fully type-checked, concurrent pipelines from composable segments.
 
 ---
 
-Dovetail is a Roslyn source generator for building async pipelines out of composable, independent segments. You write segments that each do one thing; Dovetail reads their input and result types, works out which ones depend on which, and generates one `ExecuteAsync` that runs everything concurrently except where one segment depends on the other. Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring any graph errors are caught at compile time.
+Dovetail is a Roslyn source generator for building async pipelines out of composable, independent segments. You write segments that each do one thing; Dovetail reads their input and result types, works out which ones depend on which, and generates one `ExecuteAsync` that runs everything concurrently except where one segment depends on the other.
+
+```csharp
+public partial class ExamplePipeline(
+    [Segment] IPipelineSegment<Query, DetailModel> details,
+    [Segment] IPipelineSegment<DetailModel, SpecificationModel> specifications,
+    [Segment] IPipelineSegment<DetailModel, DefinitionModel> definition,
+    [Segment] IPipelineSegment<SpecificationModel, DefinitionModel, FullModel> full
+) : IPipeline<Query, FullModel>;
+```
+
+Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring issues are caught at compile time.
 
 ## 🕊️ Why Dovetail?
 
@@ -42,10 +53,10 @@ In addition, Dovetail works quite well for:
 
 Most notably, Dovetail is for managing the complexity of aggregation logic that needs to be spread across many services. It's overkill if you have very simple use cases. That said, there are other properly complex use cases Dovetail isn't suited for:
 
-* **Dynamic or conditional graph shapes:** The DAG is resolved entirely by compile-time type matching. There's no "run this segment only if that one says so," no step list that varies by tenant, feature flag, or runtime config. If your workflow needs conditional branching, this isn't the tool.
+* **Streaming or incremental results:** One execution produces one final result; Dovetail does not support `IAsyncEnumerable`, nor progressive rendering as branches complete.
 * **Long-running or durable workflows:** Dovetail has no persistence, no checkpointing, and no resuming after a crash. Dovetail is an in-process, single-execution composition helper, not a durable orchestrator.
 * **Heavy CPU-bound work:** The concurrency model overlaps I/O waits and doesn't spread compute across cores. If your "segments" are actually CPU-heavy, this won't help beyond what `async`/`await` already gives you.
-* **Streaming or incremental results:** One execution produces one final result; Dovetail does not support `IAsyncEnumerable`, nor progressive rendering as branches complete.
+* **Dynamic pipeline shapes:** The DAG is resolved entirely by compile-time type matching, so the shape of the pipeline can't dynamically change at runtime. Dovetail does allow a limited degree of [conditional segment execution](#conditional-segment-execution), but only within the context of a rigid, compile-time graph shape.
 
 ## 🚀 Quickstart
 
@@ -300,7 +311,7 @@ public partial class MyPipeline<T, U>(
 }
 ```
 
-### 🔗 Chaining Pipelines
+### 🔗 Pipelines-as-Segments
 
 `IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (the same input types, in the same order, and the same result type). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
 
@@ -332,7 +343,7 @@ Note that the tracing calls are still nearly free if nothing's listening: `Activ
 
 ## 🏛️ Architectural Considerations
 
-### 🛡️ Error Handling
+### 💥 Exception Handling
 
 Segments are not sandboxed within a pipeline, so an exception from one segment fails the entire pipeline. It was deliberately chosen that Dovetail has no concept of an "optional" segment. If a segment should degrade gracefully instead of failing the whole pipeline, catch its own failure and return a fallback value:
 
@@ -355,9 +366,7 @@ public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, Ite
 
 One thing worth being careful about: don't catch `OperationCanceledException` this way. If the pipeline is actually being cancelled, that should propagate normally rather than being swallowed into a fallback value.
 
-### 💥 Concurrent Exceptions
-
-When two or more segments throw at the same time, only one exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from multiple segments. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
+If multiple concurrent segments fail to catch their own exceptions, only one exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from every segment. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
 
 If you need visibility into every exception rather than just the one that propagates, [tracing](#tracing) marks every throwing segment's own activity `Error`, regardless of which single exception makes it back to the caller.
 
@@ -395,6 +404,51 @@ public class ProcessingSegment(...) : IPipelineSegment<Result<DbRecord>, Result<
             ...
         }
 }
+```
+
+### ⁉️ Conditional Segment Execution
+
+Dovetail has no dedicated feature for conditional execution, but because segments are just plain classes with constructor-injected dependencies, wrapping one in another gets you a limited form of it for free.
+
+Static segment methods can't help here: a `[Segment]` method must be `static` (see [Static Segment Methods](#static-segment-methods)), so it has no access to constructor-injected dependencies like a feature flag service. Conditional branching therefore has to live in an ordinary segment class, with the real segment and the flag service as its constructor dependencies. You'll need to write your own ExecuteAsync for this:
+
+```csharp
+public class MyPipeline(
+    FeatureFlagService flags,
+    IPipelineSegment<Input, Output> inner
+) : IPipelineSegment<Input, Output>
+{
+    public async Task<Output> ExecuteAsync(Input info, CancellationToken ct) =>
+        flags.IsSuperFeatureEnabled
+        ? await inner.ExecuteAsync(info, ct)
+        : new Output();
+}
+```
+
+The same technique scales to whole branches by combining it with [pipelines-as-segments](#pipelines-as-segments): you can define the branch as its own pipeline, then wrap that pipeline the same way you'd wrap a single segment:
+
+```csharp
+public partial class InnerPipeline(
+    [Segment] SecondSegment second,
+    [Segment] ThirdSegment third
+) : IPipeline<Second, Fourth>, IPipelineSegment<Second, Fourth>;
+
+public class ConditionalInnerSegment(
+    FeatureFlagService flags,
+    InnerPipeline inner
+) : IPipelineSegment<Second, Fourth>
+{
+    public async Task<Fourth> ExecuteAsync(Second second, CancellationToken ct) =>
+        flags.IsSuperFeatureEnabled
+        ? await inner.ExecuteAsync(second, ct)
+        : new Fourth();
+}
+
+public partial class OuterPipeline(
+    [Segment] FirstSegment first,
+    [Segment] ConditionalInnerSegment innerConditional,
+    [Segment] FourthSegment fourth
+) : IPipeline<First, Fifth>;
 ```
 
 ### 🧪 Testing Segments
