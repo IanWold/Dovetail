@@ -8,16 +8,15 @@ Dovetail
 
 <a href="https://www.nuget.org/packages/Dovetail"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/Dovetail?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
 
+Build fully type-checked, concurrent pipelines from composable segments.
 
-A source generator for implementing asynchronous pipelines of any complexity.
-
-[Quickstart](#quickstart) • [Diagnostics](#diagnostics) • [Example App](Dovetail.Example)
+[Quickstart](#quickstart) • [Diagnostics](#diagnostics) • [Example](Dovetail.Example)
 
 </div>
 
 ---
 
-Dovetail is a Roslyn source generator for building async pipelines out of small, independently testable steps. You write segments that each do one thing; Dovetail figures out which ones depend on which, runs everything that can run concurrently, and generates the orchestration code for you.
+Dovetail is a Roslyn source generator for building async pipelines out of composable, independent segments. You write segments that each do one thing; Dovetail reads their input and result types, works out which ones depend on which, and generates one `ExecuteAsync` that runs everything concurrently except where one segment depend on each other. Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring any graph errors are caught at compile time.
 
 ## Why Dovetail?
 
