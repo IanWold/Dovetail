@@ -535,6 +535,12 @@ The fastest way to understand what a pipeline actually executes is to read the c
 
 You'll find the generated code in `Generated/Dovetail`. Like any other file, you can set breakpoints in the generated source.
 
+### 🗺️ Generated Visual Diagrams
+
+To make it easy to visually assess Dovetail's DAG, every generated `ExecuteAsync` carries an XML doc comment with a Mermaid flowchart of that pipeline's computed segment graph.
+
+Most IDEs won't render Mermaid directly in a tooltip, but the diagram can be copied into [mermaid.live](https://mermaid.live) or any other Mermaid viewer. If the pipeline carries [`[MaxConcurrency(n)]`](#managing-concurrency), the comment notes the cap alongside the diagram.
+
 ### 🏎️ Concurrency and Exceptions
 
 Every segment starts running immediately, but only the segment producing the pipeline's result is directly awaited; every other segment is guaranteed to be awaited transitively somewhere along the way there (that's what [DOVE008](#diagnostics) enforces). When two or more segments fail around the same time, it comes down to a race for which exception actually reaches the caller (see [Exception Handling](#exception-handling)).
