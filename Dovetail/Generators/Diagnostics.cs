@@ -165,4 +165,13 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor InvalidMaxConcurrency = new(
+        id: "DOVE019",
+        title: "MaxConcurrency must be a positive integer",
+        messageFormat: "'{0}' declares [MaxConcurrency({1})], but the value must be 1 or greater; use a positive integer, or remove the attribute to leave concurrency unbounded",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

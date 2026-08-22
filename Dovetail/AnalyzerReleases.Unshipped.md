@@ -23,3 +23,4 @@ DOVE015 | Dovetail.SourceGenerator | Error | A pipeline can't be nested inside a
 DOVE016 | Dovetail.SourceGenerator | Error | A [Segment] method can't have its own type parameters
 DOVE017 | Dovetail.SourceGenerator | Error | More than one segment implements the same IPipelineSegment<...> interface
 DOVE018 | Dovetail.SourceGenerator | Error | Segment dependency ambiguously matches a pipeline input and a segment's result
+DOVE019 | Dovetail.SourceGenerator | Error | MaxConcurrency must be a positive integer
