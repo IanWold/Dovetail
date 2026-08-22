@@ -363,6 +363,10 @@ Note that the tracing calls are still nearly free if nothing's listening: `Activ
 
 ## 🏛️ Architectural Considerations
 
+Dovetail is deliberately narrow. It isn't a workflow engine, a saga framework, or a runtime-configured service graph. Its entire job is to take a set single-purpose units of work whose inputs and outputs are declared in the type system, and generate the one thing you'd otherwise have to hand-write and hand-verify yourself: the call graph connecting them, running as much of it concurrently as the data dependencies allow. The DAG isn't discovered, configured, or built up at runtime; it's just the parameter types. That gives us the compile-time security that Dovetail intends to provide.
+
+That narrowness pushes toward a particular shape for the part of an app that uses it. Specifically, as pipelines must resolve to some single output, their entire focus is on managing many different sources of data to compose a single object. This sort of aggregation is typically the responsibility of the business/domain/application layer, though no doubt Dovetail could be used at any reasonable point in the application.
+
 ### ⚡ Concurrency
 
 Segments that don't depend on each other run genuinely concurrently, not just asynchronously in sequence, which results in several considerations to design around up front, beyond exception/error handling (see below):
