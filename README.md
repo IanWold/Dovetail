@@ -6,7 +6,7 @@
 Dovetail
 </h1>
 
-<a href="https://www.nuget.org/packages/Dovetail"><img alt="NuGet Version" src="https://img.shields.io/nuget/vpre/Dovetail?style=for-the-badge&logo=nuget&label=%20&labelColor=gray"></a>
+[![Nuget](https://img.shields.io/nuget/vpre/Dovetail?style=for-the-badge&logo=nuget&label=%20&labelColor=gray)![NuGet Downloads](https://img.shields.io/nuget/dt/Dovetail?style=for-the-badge&label=%20)](https://www.nuget.org/packages/Dovetail)
 
 Build fully type-checked, concurrent pipelines from composable segments.
 
