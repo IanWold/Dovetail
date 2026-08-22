@@ -310,6 +310,8 @@ Without it, every eligible segment starts at once. With it, each segment's execu
 
 The limit is per-pipeline, not global: a nested pipeline used as a segment ([Pipelines-as-Segments](#pipelines-as-segments)) fans out (and throttles, if it declares its own `[MaxConcurrency(n)]`) independently of its parent.
 
+Note that `[MaxConcurrency(1)]` can be used to force the pipeline to execute sequentially.
+
 `n` must be a positive integer (DOVE019). Omit the attribute to leave concurrency unbounded, which is the default.
 
 ### 🪈 Generic Pipelines
