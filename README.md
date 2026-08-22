@@ -16,9 +16,9 @@ Build fully type-checked, concurrent pipelines from composable segments.
 
 ---
 
-Dovetail is a Roslyn source generator for building async pipelines out of composable, independent segments. You write segments that each do one thing; Dovetail reads their input and result types, works out which ones depend on which, and generates one `ExecuteAsync` that runs everything concurrently except where one segment depend on each other. Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring any graph errors are caught at compile time.
+Dovetail is a Roslyn source generator for building async pipelines out of composable, independent segments. You write segments that each do one thing; Dovetail reads their input and result types, works out which ones depend on which, and generates one `ExecuteAsync` that runs everything concurrently except where one segment depends on the other. Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring any graph errors are caught at compile time.
 
-## Why Dovetail?
+## 🕊️ Why Dovetail?
 
 **Compile-time correctness, helpful diagnostics:** Every dependency within the pipeline is checked when your project builds, not when a request hits production. A missing dependency, two segments producing the same type, a cycle: these are compile errors with a specific, located diagnostic, not bugs you find at 2 AM. There's no string-keyed registration, no reflection-based service location, no runtime graph to misconfigure. The type system is the only source of truth.
 
@@ -28,7 +28,7 @@ Dovetail is a Roslyn source generator for building async pipelines out of compos
 
 **Lightweight and quick to set up:** One NuGet package, no forced dependencies, no base classes to inherit, no configuration files, no startup registration required. A segment is a class implementing one interface; a pipeline is a partial class with a few `[Segment]` attributes.
 
-### Who Dovetail Is For
+### 🎯 Who Dovetail Is For
 
 Dovetail is designed particularly for composition and aggregation workflows: fanning out to several independent services or data sources and merging the results into one response. BFF-style endpoints, product-detail-page assembly, dashboard and summary views, GraphQL-style resolvers implemented over REST. Dovetail is best used for managing complexity in this domain.
 
@@ -38,7 +38,7 @@ In addition, Dovetail works quite well for:
 * **Fixed-shape async initialization sequences:** A small, static DAG of async setup steps where some branches are genuinely independent of each other.
 * **Teams splitting ownership across a composed endpoint:** Segments are plain, DI-constructible classes with no shared orchestration code, so different people can own different segments without touching how they're wired together.
 
-### Who Dovetail Is Not For
+### 🚫 Who Dovetail Is Not For
 
 Most notably, Dovetail is for managing the complexity of aggregation logic that needs to be spread across many services. It's overkill if you have very simple use cases. That said, there are other properly complex use cases Dovetail isn't suited for:
 
@@ -47,7 +47,7 @@ Most notably, Dovetail is for managing the complexity of aggregation logic that 
 * **Heavy CPU-bound work:** The concurrency model overlaps I/O waits and doesn't spread compute across cores. If your "segments" are actually CPU-heavy, this won't help beyond what `async`/`await` already gives you.
 * **Streaming or incremental results:** One execution produces one final result; Dovetail does not support `IAsyncEnumerable`, nor progressive rendering as branches complete.
 
-## Quickstart
+## 🚀 Quickstart
 
 ```
 dotnet add package Dovetail
@@ -101,7 +101,7 @@ var pipeline = new ItemPipeline(infoSegment, priceSegment, imagesSegment);
 ItemModel model = await pipeline.ExecuteAsync(itemId, cancellationToken);
 ```
 
-## Detailed Explanation
+## 🔍 Detailed Explanation
 
 Dovetail reads each segment's `IPipelineSegment<...>` interface to learn its input and result types, then wires the pipeline together purely by matching those types:
 
@@ -157,7 +157,7 @@ public partial class ItemPipeline
 
 (Simplified for readability; the generator fully qualifies every type it emits.)
 
-### Dependency Injection
+### 🔌 Dependency Injection
 
 If your project references `Microsoft.Extensions.DependencyInjection`, Dovetail also generates an `AddPipelines()` extension method:
 
@@ -198,7 +198,7 @@ Each non-generic segment is also registered against every `IPipelineSegment<...>
 
 If two segments implement the exact same `IPipelineSegment<...>` interface, `AddPipelines()` wouldn't know which one to use for that interface, so this is a compile error (DOVE017).
 
-### Constructors
+### 🏗️ Constructors
 
 Both primary and conventional constructors work:
 
@@ -227,7 +227,7 @@ public partial class ItemPipeline(
 ) : IPipeline<int, ItemModel>;
 ```
 
-### Static Segment Methods
+### ⚙️ Static Segment Methods
 
 Dovetail supports static methods in the pipeline class being used as segments:
 
@@ -282,7 +282,7 @@ private static async Task<Result> SomeSegment(Input input, CancellationToken ct)
 
 The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
 
-### Generic Pipelines
+### 🪈 Generic Pipelines
 
 Pipelines and segments can be generic, and a pipeline's own type parameters can flow through to its segments, each segment using a different one:
 
@@ -300,7 +300,7 @@ public partial class MyPipeline<T, U>(
 }
 ```
 
-### Chaining Pipelines
+### 🔗 Chaining Pipelines
 
 `IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (the same input types, in the same order, and the same result type). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
 
@@ -315,7 +315,7 @@ Since both interfaces declare an identical `Task<ItemInfo> ExecuteAsync(int, Can
 
 This only applies when the shapes match. A type that implements `IPipelineSegment<...>` without a matching `IPipeline<...>` still needs its `ExecuteAsync` hand-written, exactly like any other segment.
 
-### Tracing
+### 📡 Tracing
 
 If `System.Diagnostics.DiagnosticSource` is available, Dovetail wraps the pipeline and every segment in an `Activity`, so you can see exactly which segment was slow without adding anything yourself:
 
@@ -330,9 +330,9 @@ Like the dependency injection generation, the tracing logic is only generated wh
 
 Note that the tracing calls are still nearly free if nothing's listening: `Activity.StartActivity` returns `null` without a registered listener, and every call after it is a `?.`-guarded no-op.
 
-## Architectural Considerations
+## 🏛️ Architectural Considerations
 
-### Error Handling
+### 🛡️ Error Handling
 
 Segments are not sandboxed within a pipeline, so an exception from one segment fails the entire pipeline. It was deliberately chosen that Dovetail has no concept of an "optional" segment. If a segment should degrade gracefully instead of failing the whole pipeline, catch its own failure and return a fallback value:
 
@@ -355,13 +355,13 @@ public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, Ite
 
 One thing worth being careful about: don't catch `OperationCanceledException` this way. If the pipeline is actually being cancelled, that should propagate normally rather than being swallowed into a fallback value.
 
-### Concurrent Failures
+### 💥 Concurrent Failures
 
 When two or more segments fail at the same time, only **one** exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from multiple segments. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
 
 In practice: if two unrelated segments both throw at once, you'll see whichever one happened to be part of the chain the terminal segment was awaiting when it faulted, not both. If you need visibility into every failure rather than just the one that propagates, [tracing](#tracing) marks *every* failing segment's own activity `Error`, regardless of which single exception makes it back to the caller.
 
-### Testing Segments
+### 🧪 Testing Segments
 
 Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
 
@@ -388,7 +388,7 @@ public class ItemPriceSegmentTests
 
 `ExecuteAsync` itself isn't something you typically need to unit test as Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
 
-## Diagnostics
+## 🩺 Diagnostics
 
 | ID | Meaning |
 |---|---|
