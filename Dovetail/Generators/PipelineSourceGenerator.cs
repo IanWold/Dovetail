@@ -16,6 +16,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
     internal const string SegmentParametersTrackingName = "SegmentParameters";
     private const string InputSeparator = "";
 
+    private static readonly Regex _qualifiedTypeNamePattern = new(@"global::(?:\w+\.)*(\w+)", RegexOptions.Compiled);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var segmentParameters = context.SyntaxProvider
@@ -54,15 +56,24 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
     private static SegmentParameterInfo? GetSegmentParameter(GeneratorAttributeSyntaxContext context)
     {
-        if (context.TargetSymbol is not IParameterSymbol { ContainingSymbol: IMethodSymbol { MethodKind: MethodKind.Constructor, ContainingType: { } containingType }} parameterSymbol)
+        if (context.TargetSymbol is not IParameterSymbol parameterSymbol)
         {
             return null;
         }
 
-        var parameterLocation = context.TargetNode.GetLocation();
+        return BuildSegmentParameterInfo(parameterSymbol, (ParameterSyntax)context.TargetNode);
+    }
+
+    private static SegmentParameterInfo? BuildSegmentParameterInfo(IParameterSymbol parameterSymbol, ParameterSyntax parameterSyntax)
+    {
+        if (parameterSymbol.ContainingSymbol is not IMethodSymbol { MethodKind: MethodKind.Constructor, ContainingType: { } containingType })
+        {
+            return null;
+        }
+
+        var parameterLocation = parameterSyntax.GetLocation();
         var containingTypeLocation = containingType.Locations.FirstOrDefault();
 
-        var parameterSyntax = (ParameterSyntax)context.TargetNode;
         var isPrimaryConstructorParameter = parameterSyntax.Parent?.Parent is TypeDeclarationSyntax;
         var parameterTypeName = parameterSymbol.Type.ToDisplayString(PipelineShapeResolver.DisplayNameFormat);
 
@@ -209,12 +220,22 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
     private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context)
     {
-        if (context.TargetSymbol is not IMethodSymbol { ContainingType: { } containingType } methodSymbol)
+        if (context.TargetSymbol is not IMethodSymbol methodSymbol)
         {
             return null;
         }
 
-        var methodLocation = context.TargetNode.GetLocation();
+        return BuildSegmentMethodInfo(methodSymbol);
+    }
+
+    private static SegmentParameterInfo? BuildSegmentMethodInfo(IMethodSymbol methodSymbol)
+    {
+        if (methodSymbol.ContainingType is not { } containingType)
+        {
+            return null;
+        }
+
+        var methodLocation = methodSymbol.Locations.FirstOrDefault();
         var containingTypeLocation = containingType.Locations.FirstOrDefault();
 
         var (isPartial, ownKeyword) = GetPartialityAndKeyword(containingType);
@@ -345,13 +366,82 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         );
     }
 
+    internal static ImmutableArray<SegmentParameterInfo> FindSegmentMembers(INamedTypeSymbol candidateType)
+    {
+        var builder = ImmutableArray.CreateBuilder<SegmentParameterInfo>();
+
+        foreach (var constructor in candidateType.InstanceConstructors)
+        {
+            foreach (var parameter in constructor.Parameters)
+            {
+                if (!HasSegmentAttribute(parameter.GetAttributes())
+                    || parameter.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() is not ParameterSyntax parameterSyntax
+                )
+                {
+                    continue;
+                }
+
+                if (BuildSegmentParameterInfo(parameter, parameterSyntax) is { } parameterInfo)
+                {
+                    builder.Add(parameterInfo);
+                }
+            }
+        }
+
+        foreach (var member in candidateType.GetMembers())
+        {
+            if (member is not IMethodSymbol method || !HasSegmentAttribute(method.GetAttributes()))
+            {
+                continue;
+            }
+
+            if (BuildSegmentMethodInfo(method) is { } methodInfo)
+            {
+                builder.Add(methodInfo);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool HasSegmentAttribute(ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attribute in attributes)
+        {
+            if (attribute.AttributeClass is { Name: nameof(SegmentAttribute) } attributeClass
+                && attributeClass.ContainingNamespace.ToDisplayString() == "Dovetail"
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool Execute(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, SourceProductionContext context, bool hasActivitySource)
     {
+        if (!TryBuildGraph(containingType, parameters, context.ReportDiagnostic, out var graph))
+        {
+            return false;
+        }
+
+        var model = graph!.Value;
+        var source = GenerateSource(model.ContainingType, model.PipelineInputTypeNames, model.PipelineResultTypeName, model.Segments, model.Dependencies, model.TerminalParameterName, hasActivitySource, model.MaxConcurrency);
+        
+        context.AddSource($"{model.ContainingType.Name}.g.cs", source);
+        
+        return true;
+    }
+
+    internal static bool TryBuildGraph(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, Action<Diagnostic> reportDiagnostic, out PipelineGraphModel? graph)
+    {
+        graph = null;
         var containingTypeLocation = parameters[0].ContainingTypeLocation ?? Location.None;
 
         if (!containingType.IsPartial)
         {
-            context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustBePartial, containingTypeLocation, containingType.Name));
+            reportDiagnostic(Diagnostic.Create(ContainingTypeMustBePartial, containingTypeLocation, containingType.Name));
             return false;
         }
 
@@ -359,13 +449,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         {
             if (ancestor.IsGeneric)
             {
-                context.ReportDiagnostic(Diagnostic.Create(NestedInGenericType, containingTypeLocation, containingType.Name, ancestor.Name));
+                reportDiagnostic(Diagnostic.Create(NestedInGenericType, containingTypeLocation, containingType.Name, ancestor.Name));
                 return false;
             }
 
             if (!ancestor.IsPartial)
             {
-                context.ReportDiagnostic(Diagnostic.Create(ContainingAncestorMustBePartial, containingTypeLocation, containingType.Name, ancestor.Name));
+                reportDiagnostic(Diagnostic.Create(ContainingAncestorMustBePartial, containingTypeLocation, containingType.Name, ancestor.Name));
                 return false;
             }
         }
@@ -373,7 +463,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var pipelineResultTypeName = parameters[0].PipelineResultTypeName;
         if (pipelineResultTypeName is null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(ContainingTypeMustImplementPipeline, containingTypeLocation, containingType.Name));
+            reportDiagnostic(Diagnostic.Create(ContainingTypeMustImplementPipeline, containingTypeLocation, containingType.Name));
             return false;
         }
 
@@ -384,7 +474,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         foreach (var duplicateInputType in pipelineInputTypeNames.GroupBy(static t => t).Where(static g => g.Count() > 1).Select(static g => g.Key))
         {
-            context.ReportDiagnostic(Diagnostic.Create(DuplicatePipelineInput, containingTypeLocation, containingType.Name, duplicateInputType));
+            reportDiagnostic(Diagnostic.Create(DuplicatePipelineInput, containingTypeLocation, containingType.Name, duplicateInputType));
             hasErrors = true;
         }
 
@@ -396,7 +486,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var maxConcurrency = parameters[0].MaxConcurrency;
         if (maxConcurrency is <= 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(InvalidMaxConcurrency, containingTypeLocation, containingType.Name, maxConcurrency));
+            reportDiagnostic(Diagnostic.Create(InvalidMaxConcurrency, containingTypeLocation, containingType.Name, maxConcurrency));
             return false;
         }
 
@@ -406,17 +496,17 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             {
                 if (parameter.StaticSegmentMethodProblem == StaticSegmentMethodProblem.NotStatic)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(SegmentMethodMustBeStatic, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
+                    reportDiagnostic(Diagnostic.Create(SegmentMethodMustBeStatic, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
                     hasErrors = true;
                 }
                 else if (parameter.StaticSegmentMethodProblem == StaticSegmentMethodProblem.NoReturnValue)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(SegmentMethodMustReturnAValue, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
+                    reportDiagnostic(Diagnostic.Create(SegmentMethodMustReturnAValue, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
                     hasErrors = true;
                 }
                 else if (parameter.StaticSegmentMethodProblem == StaticSegmentMethodProblem.HasOwnTypeParameters)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(SegmentMethodCannotHaveOwnTypeParameters, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
+                    reportDiagnostic(Diagnostic.Create(SegmentMethodCannotHaveOwnTypeParameters, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName));
                     hasErrors = true;
                 }
 
@@ -425,14 +515,14 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
             if (parameter.SegmentResultTypeName is null)
             {
-                context.ReportDiagnostic(Diagnostic.Create(SegmentTypeMustImplementPipelineSegment, parameter.ParameterLocation ?? Location.None, parameter.ParameterName));
+                reportDiagnostic(Diagnostic.Create(SegmentTypeMustImplementPipelineSegment, parameter.ParameterLocation ?? Location.None, parameter.ParameterName));
                 hasErrors = true;
             }
 
             if (parameter.ValueAccessor is null)
             {
                 var descriptor = parameter.BackingMemberAmbiguous ? AmbiguousSegmentBackingMember : SegmentBackingMemberNotFound;
-                context.ReportDiagnostic(Diagnostic.Create(descriptor, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName, parameter.ParameterTypeName));
+                reportDiagnostic(Diagnostic.Create(descriptor, parameter.ParameterLocation ?? Location.None, containingType.Name, parameter.ParameterName, parameter.ParameterTypeName));
                 hasErrors = true;
             }
         }
@@ -464,7 +554,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             var names = string.Join(", ", duplicates.Select(static s => $"'{s.ParameterName}'"));
             var firstLocation = duplicates.First().ParameterLocation ?? Location.None;
 
-            context.ReportDiagnostic(Diagnostic.Create(DuplicateSegmentResult, firstLocation, names, duplicates.Key));
+            reportDiagnostic(Diagnostic.Create(DuplicateSegmentResult, firstLocation, names, duplicates.Key));
             hasErrors = true;
         }
 
@@ -476,7 +566,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         var terminal = byResultType[pipelineResultTypeName].SingleOrDefault();
         if (terminal.ParameterName is null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(MissingTerminalSegment, containingTypeLocation, containingType.Name, pipelineResultTypeName));
+            reportDiagnostic(Diagnostic.Create(MissingTerminalSegment, containingTypeLocation, containingType.Name, pipelineResultTypeName));
             return false;
         }
 
@@ -494,7 +584,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
                 if (matchesInput && matchesSegment)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(AmbiguousDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, providerName));
+                    reportDiagnostic(Diagnostic.Create(AmbiguousDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, providerName));
                     hasErrors = true;
                 }
                 else if (matchesInput)
@@ -507,7 +597,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType));
+                    reportDiagnostic(Diagnostic.Create(UnresolvedDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType));
                     hasErrors = true;
                 }
             }
@@ -524,7 +614,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         if (TryFindCycle(segments, dependencies, out var cycleDescription))
         {
-            context.ReportDiagnostic(Diagnostic.Create(DependencyCycle, containingTypeLocation, containingType.Name, cycleDescription));
+            reportDiagnostic(Diagnostic.Create(DependencyCycle, containingTypeLocation, containingType.Name, cycleDescription));
             return false;
         }
 
@@ -533,7 +623,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         {
             if (!reachable.Contains(segment.ParameterName))
             {
-                context.ReportDiagnostic(Diagnostic.Create(UnreachableSegment, segment.ParameterLocation ?? Location.None, segment.ParameterName, pipelineResultTypeName));
+                reportDiagnostic(Diagnostic.Create(UnreachableSegment, segment.ParameterLocation ?? Location.None, segment.ParameterName, pipelineResultTypeName));
                 hasErrors = true;
             }
         }
@@ -543,8 +633,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        var source = GenerateSource(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, hasActivitySource, maxConcurrency);
-        context.AddSource($"{containingType.Name}.g.cs", source);
+        segments = SortByDependency(segments, dependencies);
+        graph = new PipelineGraphModel(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, maxConcurrency);
         return true;
     }
 
@@ -896,9 +986,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return builder.ToString();
     }
 
-    private static readonly Regex QualifiedTypeNamePattern = new(@"global::(?:\w+\.)*(\w+)", RegexOptions.Compiled);
-
-    private static string GenerateMermaidDiagram(ImmutableArray<string> pipelineInputTypeNames, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName)
+    internal static string GenerateMermaidDiagram(ImmutableArray<string> pipelineInputTypeNames, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName)
     {
         var lines = new List<string> { "flowchart TD" };
 
@@ -931,11 +1019,11 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         return string.Join("\n", lines);
     }
 
-    private static string EscapeMermaidLabel(string text) =>
+    internal static string EscapeMermaidLabel(string text) =>
         text.Replace("<", "#lt;").Replace(">", "#gt;");
 
-    private static string SimplifyTypeNameForDiagram(string typeName) =>
-        QualifiedTypeNamePattern.Replace(typeName, static match => match.Groups[1].Value);
+    internal static string SimplifyTypeNameForDiagram(string typeName) =>
+        _qualifiedTypeNamePattern.Replace(typeName, static match => match.Groups[1].Value);
 
     private static string GenerateActivitySource() =>
         new StringBuilder()
