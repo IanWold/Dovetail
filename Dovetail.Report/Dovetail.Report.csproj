@@ -27,6 +27,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Assets\mermaid.min.js" LogicalName="Dovetail.Report.Assets.mermaid.min.js" />
+    <EmbeddedResource Include="Assets\pico.indigo.min.css" LogicalName="Dovetail.Report.Assets.pico.indigo.min.css" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Dovetail\Dovetail.csproj" />
   </ItemGroup>
 

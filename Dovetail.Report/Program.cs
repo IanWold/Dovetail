@@ -1,4 +1,5 @@
 using Dovetail;
+using Dovetail.Report;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -123,6 +124,9 @@ catch (Exception ex)
     return 1;
 }
 
+var dovetailVersion = typeof(SegmentAttribute).Assembly.GetName().Version!;
+var reportVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version!;
+
 foreach (var compilation in compilations)
 {
     var errors = compilation.GetDiagnostics().Where(static d => d.Severity == DiagnosticSeverity.Error).ToArray();
@@ -137,7 +141,13 @@ foreach (var compilation in compilations)
         return 1;
     }
 
-    WarnIfDovetailVersionMismatch(compilation);
+    if (GetReferencedDovetailVersion(compilation) is { } referencedVersion && !referencedVersion.Equals(dovetailVersion))
+    {
+        Console.Error.WriteLine(
+            $"warning: '{compilation.AssemblyName}' references Dovetail {referencedVersion}, but dovetail-report " +
+            $"was built against Dovetail {dovetailVersion}. The report may not reflect that version's behavior."
+        );
+    }
 }
 
 var graphs = new List<PipelineGraphModel>();
@@ -176,46 +186,58 @@ foreach (var compilation in compilations)
     }
 }
 
-Console.WriteLine($"Found {graphs.Count} pipeline(s):");
-
-foreach (var graph in graphs.OrderBy(static g => g.ContainingType.Namespace).ThenBy(static g => g.ContainingType.Name))
+if (Directory.Exists(outputPath))
 {
-    var fullName = graph.ContainingType.Namespace.Length > 0
-        ? $"{graph.ContainingType.Namespace}.{graph.ContainingType.Name}"
-        : graph.ContainingType.Name;
-
-    Console.WriteLine($"- {fullName}");
-    Console.WriteLine($"    inputs: {(graph.PipelineInputTypeNames.IsEmpty ? "(none)" : string.Join(", ", graph.PipelineInputTypeNames))}");
-    Console.WriteLine($"    result: {graph.PipelineResultTypeName}");
-    Console.WriteLine($"    segments ({graph.Segments.Length}): {string.Join(", ", graph.Segments.Select(static s => s.ParameterName))}");
-
-    if (graph.MaxConcurrency is int maxConcurrency)
-    {
-        Console.WriteLine($"    maxConcurrency: {maxConcurrency}");
-    }
+    Directory.Delete(outputPath, recursive: true);
 }
 
-Console.WriteLine($"(output path resolved to: {outputPath} — Phase 4 writes the report there)");
+Directory.CreateDirectory(outputPath);
+
+var vendorPath = Path.Combine(outputPath, "vendor");
+
+Directory.CreateDirectory(vendorPath);
+
+WriteEmbeddedAsset("Dovetail.Report.Assets.mermaid.min.js", Path.Combine(vendorPath, "mermaid.min.js"));
+WriteEmbeddedAsset("Dovetail.Report.Assets.pico.indigo.min.css", Path.Combine(vendorPath, "pico.indigo.min.css"));
+
+var sortedGraphs = graphs
+    .OrderBy(static g => Render.GetFullyQualifiedName(g.ContainingType), StringComparer.Ordinal)
+    .ToArray();
+
+var pipelineLinks = sortedGraphs
+    .Select(static g => (Name: Render.GetFullyQualifiedName(g.ContainingType), FileName: Render.GetPageFileName(g.ContainingType)))
+    .ToArray();
+
+var sourcePath = solutionPath ?? projectPath!;
+var projectName = Path.GetFileNameWithoutExtension(sourcePath);
+var sourceLabel = solutionPath is not null ? "Source solution" : "Source project";
+
+File.WriteAllText(
+    Path.Combine(outputPath, "index.html"),
+    Render.RenderIndexPage(projectName, sourceLabel, Path.GetFileName(sourcePath), sortedGraphs, dovetailVersion, reportVersion, DateTimeOffset.UtcNow)
+);
+
+foreach (var graph in sortedGraphs)
+{
+    var pageFileName = Render.GetPageFileName(graph.ContainingType);
+    File.WriteAllText(Path.Combine(outputPath, pageFileName), Render.RenderPipelinePage(projectName, graph, pipelineLinks));
+}
+
+Console.WriteLine($"Wrote report for {sortedGraphs.Length} pipeline(s) to {outputPath}");
 
 return 0;
 
-static void WarnIfDovetailVersionMismatch(Compilation compilation)
-{
-    var referencedDovetail = compilation.References
+static Version? GetReferencedDovetailVersion(Compilation compilation) =>
+    compilation.References
         .Select(compilation.GetAssemblyOrModuleSymbol)
         .OfType<IAssemblySymbol>()
-        .FirstOrDefault(static assembly => assembly.Name == "Dovetail");
+        .FirstOrDefault(static assembly => assembly.Name == "Dovetail")
+        ?.Identity.Version;
 
-    if (referencedDovetail is null)
-    {
-        return;
-    }
+static void WriteEmbeddedAsset(string logicalName, string destinationPath)
+{
+    using var resourceStream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(logicalName) ?? throw new InvalidOperationException($"Missing embedded resource: {logicalName}");
+    using var fileStream = File.Create(destinationPath);
 
-    var referencedVersion = referencedDovetail.Identity.Version;
-    var toolDovetailVersion = typeof(SegmentAttribute).Assembly.GetName().Version;
-
-    if (!referencedVersion.Equals(toolDovetailVersion))
-    {
-        Console.Error.WriteLine($"warning: '{compilation.AssemblyName}' references Dovetail {referencedVersion}, but dovetail-report was built against Dovetail {toolDovetailVersion}. The report may not reflect that version's behavior.");
-    }
+    resourceStream.CopyTo(fileStream);
 }
