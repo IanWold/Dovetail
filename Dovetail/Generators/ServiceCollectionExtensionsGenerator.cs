@@ -15,7 +15,7 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
 
     internal const string RegisteredTypesTrackingName = "RegisteredTypes";
 
-    private static readonly SymbolDisplayFormat BaseNameFormat = PipelineShapeResolver.TypeNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
+    private static readonly SymbolDisplayFormat _baseNameFormat = PipelineShapeResolver.TypeNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -80,7 +80,7 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
             return null;
         }
 
-        var fullyQualifiedName = symbol.ToDisplayString(BaseNameFormat);
+        var fullyQualifiedName = symbol.ToDisplayString(_baseNameFormat);
         var lifetime = GetLifetime(symbol);
         var location = symbol.Locations.FirstOrDefault();
 
