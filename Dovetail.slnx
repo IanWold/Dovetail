@@ -3,4 +3,5 @@
   <Project Path="Dovetail/Dovetail.csproj" />
   <Project Path="Dovetail.Example/Dovetail.Example.csproj" />
   <Project Path="Dovetail.Report/Dovetail.Report.csproj" />
+  <Project Path="Dovetail.Report.Tests/Dovetail.Report.Tests.csproj" />
 </Solution>
