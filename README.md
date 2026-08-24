@@ -528,6 +528,16 @@ public partial class MyPipeline(
 
 `bToB` both consumes and produces `B`, so Dovetail knows it runs right after `aToB`. `bToC`, or anything else in the pipeline that needs a `B`, automatically receives the result of `bToB` with no extra wiring beyond declaring the segment.
 
+Chains of endomorphic segments (i.e. multiple `IPipelineSegment<B, B>` segments in the example above) are explicitly not supported; Dovetail favors simplicity over supporting smaller edge cases. Executing a chain of endomorphic segments is trivially simple to hand-write, so the recommended workaround is to write a single segment that sequentially executes the pieces.
+
+Also explicitly not supported are graph structures where some subset of the graph composes to an endomorphism, such as the following where the middle two segments could be considered a single endomorphic segment when taken together:
+
+```
+(A => B) -> (B => C) -> (C => B) -> (B => D)
+```
+
+In these cases, the recommended approach is to compose the middle two segments together in a [pipeline-as-segment](#pipelines-as-segments). This forces your code to specifically acknowledge the intent to treat the subgraph as an endomorphism.
+
 ### 💥 Exception Handling
 
 Segments are not sandboxed within a pipeline, so an exception from one segment fails the entire pipeline. It was deliberately chosen that Dovetail has no concept of an "optional" segment. If a segment should degrade gracefully instead of failing the whole pipeline, catch its own failure and return a fallback value:
