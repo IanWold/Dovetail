@@ -516,7 +516,7 @@ Segments that don't depend on each other run genuinely concurrently, not just as
 
 ### ♻️ Endomorphic Segments
 
-An _endomorphic_ segment is one that consumes and produces the same type: `IPipelineSegment<T, T>`. These frequently come up in use cases like refinement, enrichment, and validation. Dovetail supports exactly one such segment per type in a pipeline, even tough in other cases Dovetail explicitly forbids two segments producing the same type. As long as one segment (or the pipeline's own input) produces a type and one other segment both consumes and produces that same type, Dovetail chains them automatically, and anything else in the pipeline that needs the type receives the refined value, not the original.
+An _endomorphic_ segment is one that consumes and produces the same type: `IPipelineSegment<T, T>`. These frequently come up in use cases like refinement, enrichment, and validation. Dovetail supports exactly one such segment per type in a pipeline, even though in other cases Dovetail explicitly forbids two segments producing the same type. As long as one segment (or the pipeline's own input) produces a type and one other segment both consumes and produces that same type, Dovetail chains them automatically, and anything else in the pipeline that needs the type receives the refined value, not the original.
 
 ```csharp
 public partial class CheckoutPipeline(
