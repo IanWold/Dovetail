@@ -169,7 +169,7 @@ public partial class UserSummaryPipeline
 
         try
         {
-            return await assembleTask.ConfigureAwait(false);
+            return await SummaryTask.ConfigureAwait(false);
         }
         catch
         {
