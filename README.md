@@ -30,7 +30,7 @@ public partial class UserSummaryPipeline(
 
 Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring issues are caught at compile time.
 
-## Table of Contents
+## 📖 Table of Contents
 
 * **[Why Dovetail?](#%EF%B8%8F-why-dovetail)**
     * [Who Dovetail Is For](#-who-dovetail-is-for) | [Who Dovetail Is Not For](#-who-dovetail-is-not-for) 
