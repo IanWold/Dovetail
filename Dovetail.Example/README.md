@@ -46,6 +46,8 @@ Every ID (`Sku`, `UserId`, `CartId`, `OrderId`) is its own wrapper type around a
 | `GET /orders/1` with the app started as `Features__EnableCustomerProfileLookup=false dotnet run --project Dovetail.Example` | `ConditionalCustomerProfileSegment` skips `CustomerProfilePipeline` entirely; `customer` in the response falls back to a minimal, unresolved profile instead. |
 | `GET /cart/1/1` then `GET /orders/1` | Compare the console traces: `account`/`loyalty` appear directly under `CartSummaryPipeline`, but nested under `CustomerProfilePipeline` when reached through `OrderConfirmationPipeline`, showing the same two segments reused two different ways. |
 
+You can also try running the [Report tool](../Dovetail.Report) to see the generated report. A copy of the report for this app is [hosted online here](https://dovetailreportwebsite-production.up.railway.app/) as a demo.
+
 ### Tracing
 
 The app wires up a plain `System.Diagnostics.ActivityListener` (see [`Infrastructure/Tracing.cs`](Infrastructure/Tracing.cs)) that prints every `dovetail.pipeline` / `dovetail.segment` activity straight to the console as it runs, with nesting and duration. This is what Dovetail emits when _anything_ is listening. Watch the console while making requests to see which segments ran concurrently and how long each took.
