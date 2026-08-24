@@ -2,7 +2,7 @@
 
 <h1>
 <img alt="Dovetail" src="Dovetail/icon.svg" height="64">
-  
+
 Dovetail
 </h1>
 
@@ -37,7 +37,7 @@ Dovetail extensively checks your pipelines with clear, helpful diagnostic messag
 * **[Quickstart](#-quickstart)**
     * [Report Tool](#-report-tool) 
 * **[Detailed Explanation](#-detailed-explanation)**
-    * [Dependency Injection](#-dependency-injection) | [Constructors](#%EF%B8%8F-constructors) | [Static Segment Methods](#%EF%B8%8F-static-segment-methods) | [Concurrency](#-concurrency) | [Generics](#-generics) | [Pipelines-as-Segments](#-pipelines-as-segments) | [Tracing](#-tracing)
+    * [Dependency Injection](#-dependency-injection) | [Constructors](#%EF%B8%8F-constructors) | [Static Segment Methods](#%EF%B8%8F-static-segment-methods) | [Managing Concurrency](#-managing-concurrency) | [Generics](#-generics) | [Pipelines-as-Segments](#-pipelines-as-segments) | [Tracing](#-tracing)
 * **[Debugging](#-debugging)**
     * [Reading the Generated Source](#-reading-the-generated-source) | [Concurrency and Exceptions](#%EF%B8%8F-concurrency-and-exceptions) | [DI Lifetimes](#-di-lifetimes) | [Isolating Failures](#-isolating-failures) | [Generated Diagrams](#%EF%B8%8F-generated-diagrams)
 * **[Dovetail.Report Tool](#-dovetailreport-tool)**
@@ -124,8 +124,8 @@ Like `IPipelineSegment<...>`, `IPipeline<...>` comes in variants up to eight inp
 That's it! Dovetail generates `ExecuteAsync`:
 
 ```csharp
-var pipeline = new ItemPipeline(infoSegment, priceSegment, imagesSegment);
-ItemModel model = await pipeline.ExecuteAsync(itemId, cancellationToken);
+var pipeline = new UserSummaryPipeline(userSegment, permissionsSegment, activitySegment);
+UserSummary summary = await pipeline.ExecuteAsync(userId, cancellationToken);
 ```
 
 ### 📝 Report Tool
@@ -174,7 +174,7 @@ public partial class UserSummaryPipeline
         catch
         {
             cts.Cancel();
-            try { await Task.WhenAll(userTask, activityTask, permissionsTask).ConfigureAwait(false); }
+            try { await Task.WhenAll(userTask, permissionsTask, activityTask).ConfigureAwait(false); }
             catch { }
             throw;
         }
@@ -211,10 +211,10 @@ services.AddPipelines();
 This registers every segment and pipeline it finds anywhere in your compilation by their concrete type. With that in place, pipelines and segments alike can be injected:
 
 ```csharp
-public class ItemsController(ItemPipeline pipeline)
+public class UsersController(UserSummaryPipeline pipeline)
 {
-    public Task<ItemModel> GetAsync(int itemId, CancellationToken ct) =>
-        pipeline.ExecuteAsync(itemId, ct);
+    public Task<UserSummary> GetAsync(UserId userId, CancellationToken ct) =>
+        pipeline.ExecuteAsync(userId, ct);
 }
 ```
 
@@ -223,9 +223,9 @@ public class ItemsController(ItemPipeline pipeline)
 
 > [!NOTE]
 > The generated extension only registers segments and pipelines themselves, whatever _they_ depend on (an `HttpClient`, a typed client, a repository) still needs its own ordinary registration:
-> 
+>
 > ```csharp
-> services.AddHttpClient<IPriceService, PriceService>();
+> services.AddHttpClient<IAuthService, AuthService>();
 > services.AddPipelines();
 > ```
 
@@ -251,29 +251,29 @@ Each non-generic segment is also registered against every `IPipelineSegment<...>
 Both primary and conventional constructors work:
 
 ```csharp
-public partial class ItemPipeline : IPipeline<int, ItemModel>
+public partial class UserPermissionsPipeline : IPipeline<UserId, Permissions>
 {
-    private readonly ItemInfoSegment _info;
-    private readonly ItemPriceSegment _price;
+    private readonly UserSegment _user;
+    private readonly PermissionsSegment _permissions;
 
-    public ItemPipeline([Segment] ItemInfoSegment info, [Segment] ItemPriceSegment price)
+    public UserPermissionsPipeline([Segment] UserSegment user, [Segment] PermissionsSegment permissions)
     {
-        _info = info;
-        _price = price;
+        _user = user;
+        _permissions = permissions;
     }
 }
 ```
 
-Here, Dovetail resolves each `[Segment]` parameter's value by finding the one field or property on the type whose declared type matches the parameter's: `_info` and `_price` above, regardless of their names. If no member matches, or more than one does, that's a compile error (DOVE010/DOVE011) rather than something you'd discover at runtime, so name your backing members however you like.
+Here, Dovetail resolves each `[Segment]` parameter's value by finding the one field or property on the type whose declared type matches the parameter's: `_user` and `_permissions` above, regardless of their names. If no member matches, or more than one does, that's a compile error (DOVE010/DOVE011) rather than something you'd discover at runtime, so name your backing members however you like.
 
 > [!TIP]
 > A `[Segment]` parameter can also be typed as the segment's `IPipelineSegment<...>` interface instead of its concrete type:
-> 
+>
 > ```csharp
-> public partial class ItemPipeline(
->     [Segment] IPipelineSegment<int, ItemInfo> info,
->     [Segment] ItemPriceSegment price
-> ) : IPipeline<int, ItemModel>;
+> public partial class UserPermissionsPipeline(
+>     [Segment] IPipelineSegment<UserId, User> user,
+>     [Segment] PermissionsSegment permissions
+> ) : IPipeline<UserId, Permissions>;
 > ```
 
 ### ⚙️ Static Segment Methods
@@ -295,7 +295,7 @@ public partial class LargePipeline(
     [Segment] SegmentOne one,
     [Segment] SegmentTwo two,
     /* ... */
-    [Segment] TwelveResult twelve
+    [Segment] SegmentTwelve twelve
 ) : IPipeline<LargeQuery, LargeModel>
 {
     [Segment]
@@ -307,18 +307,16 @@ public partial class LargePipeline(
 This also supports cases where it would be cumbersome to create a segment class for simple data transformations in the middle of a pipeline run:
 
 ```csharp
-public record OrderInfo(OrderId OrderId, CustomerId CustomerId, ...);
+public class UserSegment : IPipelineSegment<UserId, User> { ... }
+public class TeamSegment : IPipelineSegment<TeamId, Team> { ... }
 
-public class OrderSegment : IPipelineSegment<OrderId, OrderInfo> { ... }
-public class CustomerSegment : IPipelineSegment<CustomerId, CustomerInfo> { ... }
-
-public partial class OrderPipeline(
-    [Segment] OrderSegment order,
-    [Segment] CustomerSegment customer
-) : IPipeline<OrderId, CustomerInfo>
+public partial class UserTeamPipeline(
+    [Segment] UserSegment user,
+    [Segment] TeamSegment team
+) : IPipeline<UserId, Team>
 {
     [Segment]
-    private static CustomerId OrderInfoToCustomerId(OrderInfo order) => order.CustomerId;
+    private static TeamId UserToTeamId(User user) => user.TeamId;
 }
 ```
 
@@ -332,17 +330,17 @@ private static async Task<Result> SomeSegment(Input input, CancellationToken ct)
 > [!IMPORTANT]
 > The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
 
-### 🚦 Concurrency
+### 🚦 Managing Concurrency
 
 Add `[MaxConcurrency(n)]` to a pipeline to bound how many of its segments may run at once:
 
 ```csharp
 [MaxConcurrency(4)]
-public partial class ItemPipeline(
-    [Segment] ItemInfoSegment info,
-    [Segment] ItemPriceSegment price,
-    [Segment] ItemImagesSegment images
-) : IPipeline<int, ItemModel>;
+public partial class MyPipeline(
+    [Segment] IPipelineSegment<Input, A> first,
+    [Segment] IPipelineSegment<Input, B> second,
+    [Segment] IPipelineSegment<A, B, Output> combine
+) : IPipeline<Input, Output>;
 ```
 
 Without it, every eligible segment starts at once. With it, each segment's execution is gated behind a shared semaphore instead, so at most `n` are ever running concurrently. It applies uniformly to every kind of segment, instance-based or static `[Segment]` methods alike, and composes correctly with cancellation: a segment still waiting for a free slot when a sibling fails is cancelled out of its wait immediately, rather than left waiting.
@@ -378,13 +376,13 @@ public partial class MyPipeline<T, U>(
 `IPipelineSegment<...>` and `IPipeline<...>` share the same method name (`ExecuteAsync`) wherever their shapes line up (the same input types, in the same order, and the same result type). This means a pipeline can double as a segment of another pipeline by implementing both interfaces:
 
 ```csharp
-public partial class ItemInfoPipeline(
-    [Segment] SomeSegment a,
-    [Segment] AnotherSegment b
-) : IPipeline<int, ItemInfo>, IPipelineSegment<int, ItemInfo>;
+public partial class InnerPipeline(
+    [Segment] IPipelineSegment<Input, Model> first,
+    [Segment] IPipelineSegment<Model, Output> second
+) : IPipeline<Input, Output>, IPipelineSegment<Input, Output>;
 ```
 
-Since both interfaces declare an identical `Task<ItemInfo> ExecuteAsync(int, CancellationToken)`, the one `ExecuteAsync` Dovetail already generates for `IPipeline<int, ItemInfo>` satisfies `IPipelineSegment<int, ItemInfo>` too, so there's nothing extra for you to write. `ItemInfoPipeline` can now be called directly, or used as `[Segment] ItemInfoPipeline info` inside a larger pipeline, and either way it's the same generated method doing the work.
+Since both interfaces declare an identical `Task<Output> ExecuteAsync(Input, CancellationToken)`, the one `ExecuteAsync` Dovetail already generates for `IPipeline<Input, Output>` satisfies `IPipelineSegment<Input, Output>` too, so there's nothing extra for you to write. `InnerPipeline` can now be called directly, or used as `[Segment] InnerPipeline inner` inside a larger pipeline, and either way it's the same generated method doing the work.
 
 > [!NOTE]
 > This only applies when the shapes match. A type that implements `IPipelineSegment<...>` without a matching `IPipeline<...>` still needs its `ExecuteAsync` hand-written, exactly like any other segment.
@@ -443,14 +441,14 @@ Every segment starts running immediately, but only the segment producing the pip
 
 ### 🛟 Isolating Failures
 
-Segments are plain, [independently testable](#-testing-segments) classes, so reproduce a suspected bug by exercising the segment directly instead of running the whole pipeline. If you've adopted the [Result pattern](#-collecting-multiple-errors) for multi-error collection, remember that debugging shifts from catching an exception to inspecting the returned `Result`.
+Segments are plain, [independently testable](#-testing) classes, so reproduce a suspected bug by exercising the segment directly instead of running the whole pipeline. If you've adopted the [Result pattern](#-collecting-multiple-errors) for multi-error collection, remember that debugging shifts from catching an exception to inspecting the returned `Result`.
 
 ### 🗺️ Generated Diagrams
 
 To make it easy to visually assess Dovetail's DAG, every generated `ExecuteAsync` carries an XML doc comment with a Mermaid flowchart of that pipeline's computed segment graph. Most IDEs won't render Mermaid directly in a tooltip, but the diagram can be copied into [mermaid.live](https://mermaid.live) or any other Mermaid viewer.
 
 <details><summary>Mermaid sample from the Example app</summary>
-  
+
 ```mermaid
 flowchart TD
     in_0(["input: OrderId"])
@@ -470,7 +468,7 @@ flowchart TD
     seg_payment --> seg_Assemble
     seg_shipment --> seg_Assemble
 ```
-  
+
 </details>
 
 > [!TIP]
@@ -478,7 +476,7 @@ flowchart TD
 
 ## 📝 Dovetail.Report Tool
 
-[Dovetail.Report](Dovetail.Report) is a `dotnet` tool that generates a static, offline-capable HTML report of the DAGs of the pipelines generated by [Dovetail](../README.md). It's useful for helping to understand exactly how Dovetail is wiring the pipelines together.
+[Dovetail.Report](Dovetail.Report) is a `dotnet` tool that generates a static, offline-capable HTML report of the DAGs of the pipelines generated by Dovetail. It's useful for helping to understand exactly how Dovetail is wiring the pipelines together.
 
 ```
 dotnet tool install --global Dovetail.Report
@@ -581,17 +579,17 @@ In these cases, the recommended approach is to compose the middle two segments t
 Segments are not sandboxed within a pipeline, so an exception from one segment fails the entire pipeline. It was deliberately chosen that Dovetail has no concept of an "optional" segment. If a segment should degrade gracefully instead of failing the whole pipeline, catch its own failure and return a fallback value:
 
 ```csharp
-public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, ItemImages>
+public class RecentActivitySegment(IActivityLog log) : IPipelineSegment<User, RecentActivity>
 {
-    public async Task<ItemImages> ExecuteAsync(ItemInfo info, CancellationToken ct)
+    public async Task<RecentActivity> ExecuteAsync(User user, CancellationToken ct)
     {
         try
         {
-            return await cms.GetImagesAsync(info.Slug, ct);
+            return await log.GetRecentAsync(user.LatestActivityUuid, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new ItemImages([]);
+            return RecentActivity.Empty;
         }
     }
 }
@@ -626,7 +624,7 @@ public class DataAccessSegment(IDataRepo repo) : IPipelineSegment<Input, Result<
 }
 ```
 
-In typical fashion for the result pattern, this would typically propagate `Result<T>` across all the segments, requiring that they both resolve the model from the result object and handle non-success cases:
+In typical fashion for the result pattern, this propagates `Result<T>` across all the segments, requiring that they both resolve the model from the result object and handle non-success cases:
 
 ```csharp
 public class ProcessingSegment(...) : IPipelineSegment<Result<DbRecord>, Result<Model>>
@@ -645,17 +643,17 @@ public class ProcessingSegment(...) : IPipelineSegment<Result<DbRecord>, Result<
 
 Dovetail has no dedicated feature for conditional execution, but because segments are just plain classes with constructor-injected dependencies, wrapping one in another gets you a limited form of it for free.
 
-Static segment methods can't help here: a `[Segment]` method must be `static` (see [Static Segment Methods](#-static-segment-methods)), so it has no access to constructor-injected dependencies like a feature flag service. Conditional branching therefore has to live in an ordinary segment class, with the real segment and the flag service as its constructor dependencies. You'll need to write your own ExecuteAsync for this:
+Static segment methods can't help here: a `[Segment]` method must be `static` (see [Static Segment Methods](#%EF%B8%8F-static-segment-methods)), so it has no access to constructor-injected dependencies like a feature flag service. Conditional branching therefore has to live in an ordinary segment class, with the real segment and the flag service as its constructor dependencies. You'll need to write your own `ExecuteAsync` for this:
 
 ```csharp
-public class MyPipeline(
+public class ConditionalSegment(
     FeatureFlagService flags,
     IPipelineSegment<Input, Output> inner
 ) : IPipelineSegment<Input, Output>
 {
-    public async Task<Output> ExecuteAsync(Input info, CancellationToken ct) =>
+    public async Task<Output> ExecuteAsync(Input input, CancellationToken ct) =>
         flags.IsSuperFeatureEnabled
-        ? await inner.ExecuteAsync(info, ct)
+        ? await inner.ExecuteAsync(input, ct)
         : new Output();
 }
 ```
@@ -664,26 +662,26 @@ The same technique scales to whole branches by combining it with [pipelines-as-s
 
 ```csharp
 public partial class InnerPipeline(
-    [Segment] SecondSegment second,
-    [Segment] ThirdSegment third
-) : IPipeline<Second, Fourth>, IPipelineSegment<Second, Fourth>;
+    [Segment] IPipelineSegment<SecondModel, ThirdModel> second,
+    [Segment] IPipelineSegment<ThirdModel, FourthModel> third
+) : IPipeline<SecondModel, FourthModel>, IPipelineSegment<SecondModel, FourthModel>;
 
 public class ConditionalInnerSegment(
     FeatureFlagService flags,
     InnerPipeline inner
-) : IPipelineSegment<Second, Fourth>
+) : IPipelineSegment<SecondModel, FourthModel>
 {
-    public async Task<Fourth> ExecuteAsync(Second second, CancellationToken ct) =>
+    public async Task<FourthModel> ExecuteAsync(SecondModel model, CancellationToken ct) =>
         flags.IsSuperFeatureEnabled
-        ? await inner.ExecuteAsync(second, ct)
-        : new Fourth();
+        ? await inner.ExecuteAsync(model, ct)
+        : new FourthModel();
 }
 
 public partial class OuterPipeline(
-    [Segment] FirstSegment first,
+    [Segment] IPipelineSegment<FirstModel, SecondModel> first,
     [Segment] ConditionalInnerSegment innerConditional,
-    [Segment] FourthSegment fourth
-) : IPipeline<First, Fifth>;
+    [Segment] IPipelineSegment<FourthModel, FifthModel> fourth
+) : IPipeline<FirstModel, FifthModel>;
 ```
 
 ### 🧪 Testing
@@ -691,22 +689,22 @@ public partial class OuterPipeline(
 Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
 
 ```csharp
-public class ItemPriceSegmentTests
+public class PermissionsSegmentTests
 {
     [Fact]
-    public async Task ExecuteAsync_ReturnsCurrentPrice()
+    public async Task ExecuteAsync_ReturnsPermissionsForUsersRole()
     {
-        var segment = new ItemPriceSegment(new FakePriceService(19.99m));
+        var segment = new PermissionsSegment(new FakeAuthService(Permissions.ReadOnly));
 
-        var result = await segment.ExecuteAsync(new ItemInfo { Sku = "SKU-1" }, CancellationToken.None);
+        var result = await segment.ExecuteAsync(new User { RoleId = RoleId.Viewer }, CancellationToken.None);
 
-        Assert.Equal(19.99m, result.Amount);
+        Assert.Equal(Permissions.ReadOnly, result);
     }
 
-    private class FakePriceService(decimal price) : IPriceService
+    private class FakeAuthService(Permissions permissions) : IAuthService
     {
-        public Task<Price> GetCurrentPriceAsync(string sku, CancellationToken ct) =>
-            Task.FromResult(new Price(price));
+        public Task<Permissions> GetForRoleAsync(RoleId roleId, CancellationToken ct) =>
+            Task.FromResult(permissions);
     }
 }
 ```
