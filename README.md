@@ -123,6 +123,8 @@ dovetail-report # generate the report
 
 The generated report will be in the `/dovetail-report` folder, you can open the `index.html` file from there in any browser.
 
+[See an example report](https://dovetailreportwebsite-production.up.railway.app/) generated from the [example app](Dovetail.Example).
+
 ## 🔍 Detailed Explanation
 
 Dovetail reads each segment's `IPipelineSegment<...>` interface to learn its input and result types, then wires the pipeline together purely by matching those types:
@@ -452,6 +454,8 @@ For CI usage (see below), install it to a local tool manifest instead, so the pi
 dotnet new tool-manifest # if your repo doesn't already have one
 dotnet tool install Dovetail.Report
 ```
+
+[See an example report](https://dovetailreportwebsite-production.up.railway.app/) generated from the [example app](Dovetail.Example).
 
 ### 🏃 Running
 
