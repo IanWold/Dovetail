@@ -43,7 +43,7 @@ internal static class Diagnostics
     internal static readonly DiagnosticDescriptor DuplicateSegmentResult = new(
         id: "DOVE005",
         title: "More than one segment produces the same type",
-        messageFormat: "Segments {0} all produce '{1}'; each type may be produced by only one segment in a pipeline; change one of their result types, or remove the extras",
+        messageFormat: "Segments {0} all produce '{1}'; each type may be produced by only one segment in a pipeline; change one of their result types or remove the extras; alternately, if these segments are meant to produce this type in sequence, consider extracting them into their own nested pipeline used as a segment",
         category: "Dovetail.SourceGenerator",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
