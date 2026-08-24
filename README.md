@@ -9,9 +9,9 @@ Dovetail
 [![Dovetail Nuget Version](https://img.shields.io/nuget/vpre/Dovetail?style=for-the-badge&logo=nuget&label=Dovetail)](https://www.nuget.org/packages/Dovetail)
 [![Dovetail.Report Nuget Version](https://img.shields.io/nuget/vpre/Dovetail.Report?style=for-the-badge&logo=nuget&label=Dovetail.Report)](https://www.nuget.org/packages/Dovetail.Report)
 
-Build fully type-checked, concurrent pipelines from composable segments.
+Easily build fully type-checked, concurrent-running pipelines from composable segments.
 
-[Quickstart](#quickstart) • [Diagnostics](#diagnostics) • [Example](Dovetail.Example)
+[Quickstart](#quickstart) • [Diagnostics](#diagnostics) • [Reporting](#dovetailreport-tool) • [Example](Dovetail.Example)
 
 </div>
 
