@@ -11,7 +11,7 @@ Dovetail
 
 Easily build fully type-checked, concurrent-running pipelines from composable segments.
 
-[Quickstart](#quickstart) • [Diagnostics](#diagnostics) • [Reporting](#dovetailreport-tool) • [Example](Dovetail.Example)
+[Quickstart](#-quickstart) • [Diagnostics](#-diagnostics) • [Reporting](#-dovetailreport-tool) • [Example](Dovetail.Example)
 
 </div>
 
