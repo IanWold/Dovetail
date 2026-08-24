@@ -415,7 +415,38 @@ public class DependencyInjectionGeneratorTests
         Assert.Empty(result.GeneratedTrees);
         
         var diagnostic = Assert.Single(result.Diagnostics);
-        
+
+        Assert.Equal("DOVE017", diagnostic.Id);
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenTwoSegmentsImplementTheSameEndomorphicInterface()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, int>
+            {
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
+            }
+
+            public class BarSegment : IPipelineSegment<int, int>
+            {
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
+            }
+            """;
+
+        var result = RunServiceCollectionGenerator(source);
+
+        Assert.Empty(result.GeneratedTrees);
+
+        var diagnostic = Assert.Single(result.Diagnostics);
+
         Assert.Equal("DOVE017", diagnostic.Id);
     }
 

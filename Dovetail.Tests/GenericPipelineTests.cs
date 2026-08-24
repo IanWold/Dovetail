@@ -39,7 +39,7 @@ public class GenericPipelineTests
     }
 
     [Fact]
-    public void EmitsFanOutFanIn_ForGenericPipeline()
+    public void EmitsChainedInvocations_ForGenericPipeline()
     {
         const string source = """
             using System;
@@ -177,7 +177,7 @@ public class GenericPipelineTests
     }
 
     [Fact]
-    public void EmitsFanOutFanIn_ForStaticMethodSegmentOnGenericPipeline()
+    public void EmitsChainedInvocations_ForStaticMethodSegmentOnGenericPipeline()
     {
         const string source = """
             using System;
@@ -265,5 +265,55 @@ public class GenericPipelineTests
         var value = (string)boxed.GetType().GetProperty("Value")!.GetValue(boxed)!;
 
         Assert.Equal("hello", value);
+    }
+
+    [Fact]
+    public async Task GeneratedPipeline_ForGenericPipelineWithAGenericEndomorphicSegment_ProducesCorrectResult()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class Input { public string? Value { get; init; } }
+
+            public class OriginSegment<T> : IPipelineSegment<Input, T>
+            {
+                private readonly T _value;
+                public OriginSegment(T value) => _value = value;
+                public Task<T> ExecuteAsync(Input input, CancellationToken ct) => Task.FromResult(_value);
+            }
+
+            public class RefineSegment<T> : IPipelineSegment<T, T>
+            {
+                private readonly Func<T, T> _refine;
+                public RefineSegment(Func<T, T> refine) => _refine = refine;
+                public Task<T> ExecuteAsync(T value, CancellationToken ct) => Task.FromResult(_refine(value));
+            }
+
+            public partial class MyPipeline<T>(
+                [Segment] OriginSegment<T> origin,
+                [Segment] RefineSegment<T> refine
+            ) : IPipeline<Input, T>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.MyPipeline`1")!.MakeGenericType(typeof(string));
+        var originType = assembly.GetType("Sample.OriginSegment`1")!.MakeGenericType(typeof(string));
+        var refineType = assembly.GetType("Sample.RefineSegment`1")!.MakeGenericType(typeof(string));
+
+        var origin = Activator.CreateInstance(originType, "hello")!;
+        var refine = Activator.CreateInstance(refineType, (Func<string, string>)(s => s.ToUpperInvariant()))!;
+        var pipeline = Activator.CreateInstance(pipelineType, origin, refine)!;
+        var input = Activator.CreateInstance(assembly.GetType("Sample.Input")!)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(pipeline, [input, CancellationToken.None])!;
+        var result = await task;
+
+        Assert.Equal("HELLO", result);
     }
 }

@@ -5,7 +5,7 @@ namespace Dovetail.Tests;
 public class SegmentInterfaceInjectionTests
 {
     [Fact]
-    public void EmitsFanOutFanIn_ForSegmentInjectedByInterface()
+    public void EmitsCorrectInvocation_ForSegmentInjectedByInterface()
     {
         const string source = """
             using System;

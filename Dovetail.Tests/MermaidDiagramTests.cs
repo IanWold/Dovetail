@@ -244,4 +244,43 @@ public class MermaidDiagramTests
         var exception = Record.Exception(() => XElement.Parse(xml));
         Assert.Null(exception);
     }
+
+    [Fact]
+    public void EmitsMermaidDiagram_ForEndomorphismChain()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class U;
+
+            public class OriginSegment : IPipelineSegment<int, U>
+            {
+                public Task<U> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new U());
+            }
+
+            public class RefineSegment : IPipelineSegment<U, U>
+            {
+                public Task<U> ExecuteAsync(U value, CancellationToken ct) => Task.FromResult(value);
+            }
+
+            public partial class ChainPipeline([Segment] OriginSegment origin, [Segment] RefineSegment refine) : IPipeline<int, U>;
+            """;
+
+        var text = GetGeneratedText(source);
+
+        Assert.Contains("/// flowchart TD", text);
+        Assert.Contains("///     in_0([\"input: int\"])", text);
+        Assert.Contains("///     seg_origin[\"origin: U\"]", text);
+        Assert.Contains("///     seg_refine(\"refine: U\")", text);
+        Assert.Contains("///     in_0 --> seg_origin", text);
+        Assert.Contains("///     seg_origin --> seg_refine", text);
+
+        var edgeCount = text.Split('\n').Count(static line => line.Contains("-->"));
+        Assert.Equal(2, edgeCount);
+    }
 }

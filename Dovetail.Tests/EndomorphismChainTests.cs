@@ -301,6 +301,58 @@ public class EndomorphismChainTests
     }
 
     [Fact]
+    public void ReportsDiagnostic_WhenALoneEndomorphismsInputIsUnresolved()
+    {
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class RefineSegment : IPipelineSegment<int, int>
+            {
+                public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value + 1);
+            }
+
+            public partial class UnresolvedEndomorphismPipeline([Segment] RefineSegment refine) : IPipeline<string, int>;
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE006");
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenPipelineInputCollidesWithAnOriginAndEndomorphismChain()
+    {
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct U(int Value);
+
+            public class OriginSegment : IPipelineSegment<int, U>
+            {
+                public Task<U> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new U(value));
+            }
+
+            public class RefineSegment : IPipelineSegment<U, U>
+            {
+                public Task<U> ExecuteAsync(U value, CancellationToken ct) => Task.FromResult(new U(value.Value + 1));
+            }
+
+            public partial class DoublyOriginedPipeline(
+                [Segment] OriginSegment origin,
+                [Segment] RefineSegment refine
+            ) : IPipeline<int, U, U>;
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE018");
+    }
+
+    [Fact]
     public void ReportsDiagnostic_WhenAValidChainCombinesWithAnUnrelatedDependencyToCloseACycle()
     {
         const string source = """

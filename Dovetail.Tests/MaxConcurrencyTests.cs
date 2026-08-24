@@ -198,30 +198,75 @@ public class MaxConcurrencyTests
 
             namespace Sample;
 
-            public readonly record struct Wrapped(int Value);
-
-            public class FooSegment : IPipelineSegment<int, Wrapped>
+            public static class Counters
             {
-                public Task<Wrapped> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new Wrapped(value));
+                public static int Current;
+                public static int Peak;
+            }
+
+            public static class Tracker
+            {
+                public static async Task<int> TrackAsync(int value, CancellationToken ct)
+                {
+                    var current = Interlocked.Increment(ref Counters.Current);
+
+                    int observedPeak;
+                    do
+                    {
+                        observedPeak = Counters.Peak;
+                        if (current <= observedPeak)
+                        {
+                            break;
+                        }
+                    }
+                    while (Interlocked.CompareExchange(ref Counters.Peak, current, observedPeak) != observedPeak);
+
+                    await Task.Delay(50, ct);
+
+                    Interlocked.Decrement(ref Counters.Current);
+                    return value;
+                }
+            }
+
+            public readonly record struct R1(int Value);
+            public readonly record struct R2(int Value);
+            public readonly record struct Total(int Value);
+
+            public class Worker1 : IPipelineSegment<int, R1>
+            {
+                public async Task<R1> ExecuteAsync(int value, CancellationToken ct) => new R1(await Tracker.TrackAsync(value, ct));
             }
 
             [MaxConcurrency(1)]
-            public partial class GatedPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            public partial class GatedPipeline([Segment] Worker1 one) : IPipeline<int, Total>
             {
                 [Segment]
-                private static string Stringify(Wrapped foo) => foo.Value.ToString();
+                private static async Task<R2> Two(int input, CancellationToken ct) => new R2(await Tracker.TrackAsync(input, ct));
+
+                [Segment]
+                private static Total Combine(R1 one, R2 two) => new Total(one.Value + two.Value);
             }
             """;
 
         var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
         var pipelineType = assembly.GetType("Sample.GatedPipeline")!;
-        var foo = Activator.CreateInstance(assembly.GetType("Sample.FooSegment")!)!;
-        var pipeline = Activator.CreateInstance(pipelineType, foo)!;
+        var one = Activator.CreateInstance(assembly.GetType("Sample.Worker1")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, one)!;
 
         var method = pipelineType.GetMethod("ExecuteAsync")!;
-        var task = (Task<string>)method.Invoke(pipeline, [21, CancellationToken.None])!;
-        var result = await task;
+        var task = (Task)method.Invoke(pipeline, [5, CancellationToken.None])!;
+        
+        await task;
 
-        Assert.Equal("21", result);
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        var total = (int)result.GetType().GetProperty("Value")!.GetValue(result)!;
+
+        Assert.Equal(10, total);
+
+        var countersType = assembly.GetType("Sample.Counters")!;
+        var peak = (int)countersType.GetField("Peak")!.GetValue(null)!;
+
+        Assert.True(peak <= 1, $"Expected the static segment method to share the same concurrency gate, but observed peak concurrency of {peak}.");
+        Assert.Equal(1, peak);
     }
 }

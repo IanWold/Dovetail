@@ -5,7 +5,7 @@ namespace Dovetail.Tests;
 public class StaticSegmentMethodTests
 {
     [Fact]
-    public void EmitsFanOutFanIn_ForStaticMethodSegment()
+    public void EmitsChainedInvocations_ForStaticMethodSegment()
     {
         const string source = """
             using System;
@@ -118,7 +118,7 @@ public class StaticSegmentMethodTests
     }
 
     [Fact]
-    public void EmitsFanOutFanIn_ForAsyncStaticMethodSegment()
+    public void EmitsAwaitedInvocation_ForAsyncStaticMethodSegment()
     {
         const string source = """
             using System;
@@ -347,5 +347,40 @@ public class StaticSegmentMethodTests
         var value = (int)result.GetType().GetProperty("Value")!.GetValue(result)!;
 
         Assert.Equal(45, value);
+    }
+
+    [Fact]
+    public async Task GeneratedPipeline_ForStaticMethodActingAsAnEndomorphism_ProducesCorrectResult()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class OriginSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult($"  {value}  ");
+            }
+
+            public partial class MyPipeline([Segment] OriginSegment origin) : IPipeline<int, string>
+            {
+                [Segment]
+                private static string Trim(string value) => value.Trim();
+            }
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.MyPipeline")!;
+        var origin = Activator.CreateInstance(assembly.GetType("Sample.OriginSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, origin)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(pipeline, [5, CancellationToken.None])!;
+        var result = await task;
+
+        Assert.Equal("5", result);
     }
 }
