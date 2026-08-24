@@ -1,6 +1,6 @@
 # Contributing to Dovetail
 
-Dovetail is pre-1.0 and its API can still change. **Please open an issue or start a discussion before working on a PR**, especially for anything beyond a small, obvious fix. It's a lot easier to agree on the shape of a change before it's written than to rework a finished PR.
+**Please open an issue or start a discussion before working on a PR**, especially for anything beyond a small, obvious fix. It's a lot easier to agree on the shape of a change before it's written than to rework a finished PR.
 
 Good things to open an issue for:
 
