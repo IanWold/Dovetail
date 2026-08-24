@@ -29,9 +29,10 @@ If you're changing the generator, a test that drives it against a small sample p
 
 ## Making a change
 
-1. Fork the repo and branch from `main`.
-2. Make your change, with tests as necessary
-3. `dotnet build` and `dotnet test` should both be clean.
-4. Open a PR against `main`. CI (`.github/workflows/build.yml`) runs build and test on every PR.
+1. If there is an open issue you would like to implement, please start a conversation on that issue stating you would like to take it on.
+2. Fork the repo and branch from `main`.
+3. Make your change, with tests and documentation as necessary. Communicate any clarifying questions or blocks in the related issue.
+4. `dotnet build` and `dotnet test` should both be clean, without warnings.
+5. Open a PR against `main`. CI (`.github/workflows/build.yml`) runs build and test on every PR.
 
 By submitting a PR, you agree your contribution is licensed under this project's [MIT license](LICENSE).
