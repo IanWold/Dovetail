@@ -207,11 +207,11 @@ public class ItemsController(ItemPipeline pipeline)
 
 > [!NOTE]
 > The generated extension only registers segments and pipelines themselves, whatever _they_ depend on (an `HttpClient`, a typed client, a repository) still needs its own ordinary registration:
-
-```csharp
-services.AddHttpClient<IPriceService, PriceService>();
-services.AddPipelines();
-```
+> 
+> ```csharp
+> services.AddHttpClient<IPriceService, PriceService>();
+> services.AddPipelines();
+> ```
 
 Every segment and pipeline is registered transient by default. Add `[Lifetime(DependencyLifetime.Singleton)]` or `[Lifetime(DependencyLifetime.Scoped)]` from `Dovetail.DependencyInjection` to change a segment or pipeline's lifetime:
 
@@ -252,13 +252,13 @@ Here, Dovetail resolves each `[Segment]` parameter's value by finding the one fi
 
 > [!TIP]
 > A `[Segment]` parameter can also be typed as the segment's `IPipelineSegment<...>` interface instead of its concrete type:
-
-```csharp
-public partial class ItemPipeline(
-    [Segment] IPipelineSegment<int, ItemInfo> info,
-    [Segment] ItemPriceSegment price
-) : IPipeline<int, ItemModel>;
-```
+> 
+> ```csharp
+> public partial class ItemPipeline(
+>     [Segment] IPipelineSegment<int, ItemInfo> info,
+>     [Segment] ItemPriceSegment price
+> ) : IPipeline<int, ItemModel>;
+> ```
 
 ### ⚙️ Static Segment Methods
 
@@ -331,13 +331,13 @@ public partial class ItemPipeline(
 
 Without it, every eligible segment starts at once. With it, each segment's execution is gated behind a shared semaphore instead, so at most `n` are ever running concurrently. It applies uniformly to every kind of segment, instance-based or static `[Segment]` methods alike, and composes correctly with cancellation: a segment still waiting for a free slot when a sibling fails is cancelled out of its wait immediately, rather than left waiting.
 
-> [!WARNING]
-> The limit is per-pipeline, not global: a nested pipeline used as a segment ([Pipelines-as-Segments](#-pipelines-as-segments)) fans out (and throttles, if it declares its own `[MaxConcurrency(n)]`) independently of its parent.
-
 > [!TIP]
 > `[MaxConcurrency(1)]` can be used to force the pipeline to execute sequentially.
 
-`n` must be a positive integer (DOVE019). Omit the attribute to leave concurrency unbounded, which is the default.
+> [!WARNING]
+> The limit is per-pipeline, not global: a nested pipeline used as a segment ([Pipelines-as-Segments](#-pipelines-as-segments)) fans out (and throttles, if it declares its own `[MaxConcurrency(n)]`) independently of its parent.
+>
+> `n` must be a positive integer (DOVE019). Omit the attribute to leave concurrency unbounded, which is the default.
 
 ### 🪈 Generic Pipelines
 
@@ -582,7 +582,7 @@ public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, Ite
 ```
 
 > [!WARNING]
-> Be careful here: don't catch `OperationCanceledException` this way. If the pipeline is actually being cancelled, that should propagate normally rather than being swallowed into a fallback value.
+> Don't catch `OperationCanceledException` this way. If the pipeline is actually being cancelled, that should propagate normally rather than being swallowed into a fallback value.
 
 If multiple concurrent segments fail to catch their own exceptions, only one exception ever reaches the caller of `ExecuteAsync`, not an `AggregateException` containing failures from every segment. The generated code's `try`/`catch` only observes the exception that surfaces through the terminal segment's own await chain, and sibling branches that fail independently of that chain are cancelled and drained via `Task.WhenAll(...)` inside a `catch { }` that discards their exceptions.
 
