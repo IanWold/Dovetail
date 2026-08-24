@@ -174,4 +174,13 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor AmbiguousResultChain = new(
+        id: "DOVE020",
+        title: "Segments producing the same type don't form a single valid chain",
+        messageFormat: "Segments {0} all produce '{1}', but Dovetail can't tell what order they'd run in; at most one segment may both consume and produce '{1}' in the same pipeline; remove the extras, or restructure so only one segment transforms '{1}' into itself",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

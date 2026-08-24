@@ -11,6 +11,8 @@ namespace Dovetail;
 [Generator(LanguageNames.CSharp)]
 internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 {
+    private readonly record struct ChainCandidates(SegmentModel Sink, SegmentModel? Origin);
+
     private const string SegmentAttributeFullName = "Dovetail.SegmentAttribute";
     private const string ActivitySourceMetadataName = "System.Diagnostics.ActivitySource";
     internal const string SegmentParametersTrackingName = "SegmentParameters";
@@ -549,12 +551,35 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             .ToImmutableArray();
 
         var byResultType = segments.ToLookup(static s => s.ResultTypeName);
-        foreach (var duplicates in byResultType.Where(static g => g.Count() > 1))
-        {
-            var names = string.Join(", ", duplicates.Select(static s => $"'{s.ParameterName}'"));
-            var firstLocation = duplicates.First().ParameterLocation ?? Location.None;
+        var resultProviders = new Dictionary<string, ChainCandidates>();
 
-            reportDiagnostic(Diagnostic.Create(DuplicateSegmentResult, firstLocation, names, duplicates.Key));
+        foreach (var group in byResultType)
+        {
+            var candidates = group.ToImmutableArray();
+            if (candidates.Length == 1)
+            {
+                resultProviders[group.Key] = new ChainCandidates(candidates[0], Origin: null);
+                continue;
+            }
+
+            var endomorphisms = candidates.Where(c => c.InputTypeNames.Contains(group.Key)).ToImmutableArray();
+            if (candidates.Length == 2 && endomorphisms.Length == 1)
+            {
+                var sink = endomorphisms[0];
+                var origin = candidates[0].ParameterName == sink.ParameterName ? candidates[1] : candidates[0];
+
+                resultProviders[group.Key] = new ChainCandidates(sink, origin);
+
+                continue;
+            }
+
+            var names = string.Join(", ", candidates.Select(static s => $"'{s.ParameterName}'"));
+            var firstLocation = candidates[0].ParameterLocation ?? Location.None;
+
+            reportDiagnostic(candidates.Length == 2 && endomorphisms.Length == 0
+                ? Diagnostic.Create(DuplicateSegmentResult, firstLocation, names, group.Key)
+                : Diagnostic.Create(AmbiguousResultChain, firstLocation, names, group.Key));
+
             hasErrors = true;
         }
 
@@ -563,14 +588,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        var terminal = byResultType[pipelineResultTypeName].SingleOrDefault();
-        if (terminal.ParameterName is null)
+        if (!resultProviders.TryGetValue(pipelineResultTypeName, out var terminalResolution))
         {
             reportDiagnostic(Diagnostic.Create(MissingTerminalSegment, containingTypeLocation, containingType.Name, pipelineResultTypeName));
             return false;
         }
 
-        var resultProviders = segments.ToDictionary(static s => s.ResultTypeName, static s => s.ParameterName);
+        var terminalParameterName = terminalResolution.Sink.ParameterName;
         var dependencies = new Dictionary<string, ImmutableArray<DependencyBinding>>();
 
         foreach (var segment in segments)
@@ -580,9 +604,13 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             {
                 var pipelineInputIndex = pipelineInputTypeNames.IndexOf(inputType);
                 var matchesInput = pipelineInputIndex >= 0;
-                var matchesSegment = resultProviders.TryGetValue(inputType, out var providerName);
+                var matchesSegment = TryResolveSegmentProvider(resultProviders, inputType, segment.ParameterName, out var providerName, out var providerIsEndomorphism);
 
-                if (matchesInput && matchesSegment)
+                if (matchesSegment && providerIsEndomorphism)
+                {
+                    bindings.Add(new DependencyBinding(SegmentParameterName: providerName, PipelineInputIndex: null));
+                }
+                else if (matchesInput && matchesSegment)
                 {
                     reportDiagnostic(Diagnostic.Create(AmbiguousDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, providerName));
                     hasErrors = true;
@@ -618,7 +646,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        var reachable = ComputeReachableFrom(terminal.ParameterName, dependencies);
+        var reachable = ComputeReachableFrom(terminalParameterName, dependencies);
         foreach (var segment in segments)
         {
             if (!reachable.Contains(segment.ParameterName))
@@ -634,7 +662,32 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         segments = SortByDependency(segments, dependencies);
-        graph = new PipelineGraphModel(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminal.ParameterName, maxConcurrency);
+        graph = new PipelineGraphModel(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminalParameterName, maxConcurrency);
+        return true;
+    }
+
+    private static bool TryResolveSegmentProvider(Dictionary<string, ChainCandidates> resultProviders, string inputType, string consumerParameterName, out string? providerName, out bool providerIsEndomorphism)
+    {
+        providerName = null;
+        providerIsEndomorphism = false;
+
+        if (!resultProviders.TryGetValue(inputType, out var candidates))
+        {
+            return false;
+        }
+
+        var resolved = candidates.Origin is { } origin && consumerParameterName == candidates.Sink.ParameterName
+            ? origin
+            : candidates.Sink;
+
+        if (resolved.ParameterName == consumerParameterName)
+        {
+            return false;
+        }
+
+        providerName = resolved.ParameterName;
+        providerIsEndomorphism = resolved.InputTypeNames.Contains(inputType);
+        
         return true;
     }
 
