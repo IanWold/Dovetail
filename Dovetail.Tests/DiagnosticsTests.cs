@@ -100,6 +100,33 @@ public class DiagnosticsTests
 
             namespace Sample;
 
+            public class FooSegment : IPipelineSegment<string, int>
+            {
+                public Task<int> ExecuteAsync(string value, CancellationToken ct) => Task.FromResult(value.Length);
+            }
+
+            public class BarSegment : IPipelineSegment<bool, int>
+            {
+                public Task<int> ExecuteAsync(bool value, CancellationToken ct) => Task.FromResult(value ? 1 : 0);
+            }
+
+            public partial class DuplicatePipeline([Segment] FooSegment foo, [Segment] BarSegment bar) : IPipeline<string, bool, int>;
+            """;
+
+        AssertSingleDiagnostic(source, "DOVE005");
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenTwoEndomorphismsCompeteForTheSameType()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
             public class FooSegment : IPipelineSegment<int, int>
             {
                 public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
@@ -110,10 +137,10 @@ public class DiagnosticsTests
                 public Task<int> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value);
             }
 
-            public partial class DuplicatePipeline([Segment] FooSegment foo, [Segment] BarSegment bar) : IPipeline<int, int>;
+            public partial class CompetingEndomorphismPipeline([Segment] FooSegment foo, [Segment] BarSegment bar) : IPipeline<int, int>;
             """;
 
-        AssertSingleDiagnostic(source, "DOVE005");
+        AssertSingleDiagnostic(source, "DOVE020");
     }
 
     [Fact]

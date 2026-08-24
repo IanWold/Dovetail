@@ -514,6 +514,20 @@ Segments that don't depend on each other run genuinely concurrently, not just as
 
 * **Fan-out is unbounded by default.** Every eligible segment starts at once, so a pipeline fanning out to a few dozen segments that each call an external API fires that many concurrent calls simultaneously, making connection-pool exhaustion and rate-limit responses are a real risk. [`[MaxConcurrency(n)]`](#managing-concurrency) bounds this per pipeline, but it's still easy to undercount the real concurrency of an outer pipeline: the limit doesn't compound automatically, so a nested pipeline used as a segment ([Pipelines-as-Segments](#pipelines-as-segments)) fans out independently of its parent's limit.
 
+### ♻️ Endomorphic Segments
+
+An _endomorphic_ segment is one that consumes and produces the same type: `IPipelineSegment<T, T>`. These frequently come up in use cases like refinement, enrichment, and validation. Dovetail supports exactly one such segment per type in a pipeline, even tough in other cases Dovetail explicitly forbids two segments producing the same type. As long as one segment (or the pipeline's own input) produces a type and one other segment both consumes and produces that same type, Dovetail chains them automatically, and anything else in the pipeline that needs the type receives the refined value, not the original.
+
+```csharp
+public partial class CheckoutPipeline(
+    [Segment] IPipelineSegment<A, B> aToB,
+    [Segment] IPipelineSegment<B, B> bToB,
+    [Segment] IPipelineSegment<B, C> BtoC
+) : IPipeline<A, C>;
+```
+
+`bToB` both consumes and produces `B`, so Dovetail knows it runs right after `aToB`. `bToC`, or anything else in the pipeline that needs a `B`, automatically receives the result of `bToB` with no extra wiring beyond declaring the segment.
+
 ### 💥 Exception Handling
 
 Segments are not sandboxed within a pipeline, so an exception from one segment fails the entire pipeline. It was deliberately chosen that Dovetail has no concept of an "optional" segment. If a segment should degrade gracefully instead of failing the whole pipeline, catch its own failure and return a fallback value:
@@ -672,3 +686,4 @@ public class ItemPriceSegmentTests
 | DOVE017 | Two or more segments implement the same `IPipelineSegment<...>` interface, so `AddPipelines()` can't tell which one to register for it. |
 | DOVE018 | A segment's input ambiguously matches both a pipeline input and another segment's result; give one of them a distinct type. |
 | DOVE019 | `[MaxConcurrency(n)]`'s value must be 1 or greater; use a positive integer, or remove the attribute. |
+| DOVE020 | Segments producing the same type don't form a single valid chain (more than one may both consume and produce it, or three or more produce it at once); remove the extras, or restructure so only one segment transforms the type into itself. |
