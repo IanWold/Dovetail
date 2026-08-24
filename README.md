@@ -20,12 +20,12 @@ Easily build fully type-checked, concurrent-running pipelines from composable se
 Dovetail is a Roslyn source generator for building async pipelines out of composable, independent segments. You write segments that each do one thing; Dovetail reads their input and result types, works out which ones depend on which, and generates one `ExecuteAsync` that runs everything concurrently except where one segment depends on the other.
 
 ```csharp
-public partial class ExamplePipeline(
-    [Segment] IPipelineSegment<Query, DetailModel> details,
-    [Segment] IPipelineSegment<DetailModel, SpecificationModel> specifications,
-    [Segment] IPipelineSegment<DetailModel, DefinitionModel> definition,
-    [Segment] IPipelineSegment<SpecificationModel, DefinitionModel, FullModel> full
-) : IPipeline<Query, FullModel>;
+public partial class UserSummaryPipeline(
+    [Segment] IPipelineSegment<UserId, User> user,
+    [Segment] IPipelineSegment<User, Permissions> permissions,
+    [Segment] IPipelineSegment<User, RecentActivity> activity,
+    [Segment] IPipelineSegment<Permissions, RecentActivity, UserSummary> summary
+) : IPipeline<UserId, UserSummary>;
 ```
 
 Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring issues are caught at compile time.
@@ -71,8 +71,8 @@ In addition, Dovetail works quite well for:
 Most notably, Dovetail is for managing the complexity of aggregation logic that needs to be spread across many services. It's overkill if you have very simple use cases. That said, there are other properly complex use cases Dovetail isn't suited for:
 
 * **Streaming or incremental results:** One execution produces one final result; Dovetail does not support `IAsyncEnumerable`, nor progressive rendering as branches complete.
-* **Long-running or durable workflows:** Dovetail has no persistence, no checkpointing, and no resuming after a crash. Dovetail is an in-process, single-execution composition helper, not a durable orchestrator.
-* **Dynamic pipeline shapes:** The DAG is resolved entirely by compile-time type matching, so the shape of the pipeline can't dynamically change at runtime. Dovetail does allow a limited degree of [conditional segment execution](#-conditional-segment-execution), but only within the context of a rigid, compile-time graph shape.
+* **Long-running or durable workflows:** Dovetail has no persistence, no checkpointing, and no resuming after a crash. Dovetail is an in-process, single-execution composition helper, not a durable orchestrator. Use [Temporal](https://github.com/temporalio/sdk-dotnet) or the [Durable Task Framework](https://github.com/Azure/durabletask) for durable execution, or [Hangfire](https://www.hangfire.io/) if you only need durable background jobs.
+* **Dynamic pipeline shapes:** The DAG is resolved entirely by compile-time type matching, so the shape of the pipeline can't dynamically change at runtime. Dovetail does allow a limited degree of [conditional segment execution](#-conditional-segment-execution), but only within the context of a rigid, compile-time graph shape. [TPL Dataflow](https://learn.microsoft.com/en-us/dotnet/standard/parallel-programming/dataflow-task-parallel-library) is the closest equivalent but with a runtime-assembled mesh instead of compile-time construction.
 
 ## 🚀 Quickstart
 
@@ -85,37 +85,37 @@ Dovetail relies on two main concepts: _pipelines_ and _segments_. _Segments_ are
 A segment is any class or struct that implements `IPipelineSegment<TResult>` (or the multi-input generic variants like `IPipelineSegment<TInput, TResult>`, up to eight inputs). This signifies that it can be used as a segment in a pipeline. Its inputs and result types have no restrictions:
 
 ```csharp
-public class ItemInfoSegment(IDataRepo repo) : IPipelineSegment<int, ItemInfo>
+public class UserSegment(IUserStore users) : IPipelineSegment<UserId, User>
 {
-    public Task<ItemInfo> ExecuteAsync(int itemId, CancellationToken ct) =>
-        repo.GetInfoAsync(itemId, ct);
+    public Task<User> ExecuteAsync(UserId id, CancellationToken ct) =>
+        users.GetAsync(id, ct);
 }
 
-public class ItemPriceSegment(IPriceService prices) : IPipelineSegment<ItemInfo, ItemPrice>
+public class PermissionsSegment(IAuthService auth) : IPipelineSegment<User, Permissions>
 {
-    public Task<ItemPrice> ExecuteAsync(ItemInfo info, CancellationToken ct) =>
-        prices.GetCurrentPriceAsync(info.Sku, ct);
+    public Task<Permissions> ExecuteAsync(User user, CancellationToken ct) =>
+        auth.GetForRoleAsync(user.RoleId, ct);
 }
 
-public class ItemImagesSegment(ICmsService cms) : IPipelineSegment<ItemInfo, ItemImages>
+public class RecentActivitySegment(IActivityLog log) : IPipelineSegment<User, RecentActivity>
 {
-    public Task<ItemImages> ExecuteAsync(ItemInfo info, CancellationToken ct) =>
-        cms.GetImagesAsync(info.Slug, ct);
+    public Task<RecentActivity> ExecuteAsync(User user, CancellationToken ct) =>
+        log.GetRecentAsync(user.LatestActivityUuid, ct);
 }
 ```
 
 Declare the pipeline as a partial class, attaching `[Segment]` to a constructor parameter for each segment. Segments can also be static member methods:
 
 ```csharp
-public partial class ItemPipeline(
-    [Segment] ItemInfoSegment info,
-    [Segment] ItemPriceSegment price,
-    [Segment] ItemImagesSegment images
-) : IPipeline<int, ItemModel>
+public partial class UserSummaryPipeline(
+    [Segment] IPipelineSegment<UserId, User> user,
+    [Segment] IPipelineSegment<User, Permissions> permissions,
+    [Segment] IPipelineSegment<User, RecentActivity> activity
+) : IPipeline<UserId, UserSummary>
 {
     [Segment]
-    private static ItemModel Assemble(ItemInfo info, ItemPrice price, ItemImages images) =>
-        new(info, price, images);
+    private static UserSummary Summary(User user, Permissions permissions, RecentActivity activity) =>
+        new UserSummary(user.Id, user.Username, permissions, activity);
 }
 ```
 
@@ -155,50 +155,50 @@ Dovetail reads each segment's `IPipelineSegment<...>` interface to learn its inp
 Roughly, the pipeline above generates:
 
 ```csharp
-public partial class ItemPipeline
+public partial class UserSummaryPipeline
 {
-    public async Task<ItemModel> ExecuteAsync(int input, CancellationToken token)
+    public async Task<UserSummary> ExecuteAsync(UserId input, CancellationToken token)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var linkedToken = cts.Token;
 
-        var infoTask = InfoAsync();
-        var priceTask = PriceAsync();
-        var imagesTask = ImagesAsync();
-        var AssembleTask = AssembleAsync();
+        var userTask = UserAsync();
+        var permissionsTask = PermissionsAsync();
+        var activityTask = ActivityAsync();
+        var SummaryTask = SummaryAsync();
 
         try
         {
-            return await AssembleTask.ConfigureAwait(false);
+            return await assembleTask.ConfigureAwait(false);
         }
         catch
         {
             cts.Cancel();
-            try { await Task.WhenAll(infoTask, priceTask, imagesTask).ConfigureAwait(false); }
+            try { await Task.WhenAll(userTask, activityTask, permissionsTask).ConfigureAwait(false); }
             catch { }
             throw;
         }
 
-        async Task<ItemInfo> InfoAsync() =>
-            await info.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
+        async Task<User> UserAsync() =>
+            await user.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
 
-        async Task<ItemPrice> PriceAsync() =>
-            await price.ExecuteAsync(await infoTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
+        async Task<Permissions> PermissionsAsync() =>
+            await permissions.ExecuteAsync(await userTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
 
-        async Task<ItemImages> ImagesAsync() =>
-            await images.ExecuteAsync(await infoTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
+        async Task<RecentActivity> ActivityAsync() =>
+            await activity.ExecuteAsync(await userTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
 
-        async Task<ItemModel> AssembleAsync() =>
-            Assemble(
-                await infoTask.ConfigureAwait(false),
-                await priceTask.ConfigureAwait(false),
-                await imagesTask.ConfigureAwait(false));
+        async Task<UserSummary> SummaryAsync() =>
+            Summary(
+                await userTask.ConfigureAwait(false),
+                await permissionsTask.ConfigureAwait(false),
+                await activityTask.ConfigureAwait(false));
     }
 }
 ```
 
 > [!NOTE]
-> The code above is simplified for readability; the generator fully qualifies every type it emits.
+> The code above is simplified for readability. The generator fully qualifies every type it emits, as well as extra handling for telemetry and concurrency management.
 
 ### 🔌 Dependency Injection
 
