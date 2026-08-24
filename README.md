@@ -30,6 +30,22 @@ public partial class ExamplePipeline(
 
 Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring issues are caught at compile time.
 
+## Table of Contents
+
+* **[Why Dovetail?](#%EF%B8%8F-why-dovetail)**
+    * [Who Dovetail Is For](#-who-dovetail-is-for) | [Who Dovetail Is Not For](#-who-dovetail-is-not-for) 
+* **[Quickstart](#-quickstart)**
+    * [Report Tool](#-report-tool) 
+* **[Detailed Explanation](#-detailed-explanation)**
+    * [Dependency Injection](#-dependency-injection) | [Constructors](#%EF%B8%8F-constructors) | [Static Segment Methods](#%EF%B8%8F-static-segment-methods) | [Concurrency](#-concurrency) | [Generics](#-generics) | [Pipelines-as-Segments](#-pipelines-as-segments) | [Tracing](#-tracing)
+* **[Debugging](#-debugging)**
+    * [Reading the Generated Source](#-reading-the-generated-source) | [Concurrency and Exceptions](#%EF%B8%8F-concurrency-and-exceptions) | [DI Lifetimes](#-di-lifetimes) | [Isolating Failures](#-isolating-failures) | [Generated Diagrams](#%EF%B8%8F-generated-diagrams)
+* **[Dovetail.Report Tool](#-dovetailreport-tool)**
+    * [Running](#-running) | [Output](#-output) | [Using in CI](#%EF%B8%8F-using-in-ci)
+* **[Architectural Considerations](#%EF%B8%8F-architectural-considerations)**
+    * [Concurrency](#-concurrency) | [Endomorphism](#%EF%B8%8F-endomorphism) | [Exception Handling](#-exception-handling) | [Collecting Multiple Errors](#-collecting-multiple-errors) | [Conditional Execution](#%EF%B8%8F-conditional-execution) | [Testing](#-testing)
+* **[Diagnostics](#-diagnostics)**
+
 ## 🕊️ Why Dovetail?
 
 **Compile-time correctness, helpful diagnostics:** Every dependency within the pipeline is checked when your project builds, not when a request hits production. There's no string-keyed registration, no reflection-based service location, no runtime graph to misconfigure. The type system is the only source of truth.
@@ -316,7 +332,7 @@ private static async Task<Result> SomeSegment(Input input, CancellationToken ct)
 > [!IMPORTANT]
 > The method must be `static` (DOVE012) and must return a value (either `TResult` or `Task<TResult>`) (DOVE013). The static restriction guarantees the method's only inputs are the parameters Dovetail can see and validate.
 
-### 🚦 Managing Concurrency
+### 🚦 Concurrency
 
 Add `[MaxConcurrency(n)]` to a pipeline to bound how many of its segments may run at once:
 
@@ -339,7 +355,7 @@ Without it, every eligible segment starts at once. With it, each segment's execu
 >
 > `n` must be a positive integer (DOVE019). Omit the attribute to leave concurrency unbounded, which is the default.
 
-### 🪈 Generic Pipelines
+### 🪈 Generics
 
 Pipelines and segments can be generic, and a pipeline's own type parameters can flow through to its segments, each segment using a different one:
 
@@ -421,15 +437,15 @@ Every segment starts running immediately, but only the segment producing the pip
 > [!NOTE]
 > The `CancellationToken` a segment receives isn't the same token instance passed into `ExecuteAsync`. Rather, Dovetail links it internally so it can cancel sibling segments as soon as one fails. This only matters if you're comparing token instances directly.
 
-### 🌱 Dependency Injection Lifetimes
+### 🌱 DI Lifetimes
 
 `[Lifetime(...)]` defaults every pipeline and segment to `Transient`, which is the safe default. The risk shows up once you opt into `Scoped` or `Singleton`: any mutable state your own segment holds is now shared across concurrent pipeline executions. Turning on `ValidateScopes` and `ValidateOnBuild` when building your `ServiceProvider` is good practice generally, and it'll catch a `Scoped` segment landing inside a longer-lived pipeline at startup instead of at first request.
 
-### 🛟 Isolating a Failure
+### 🛟 Isolating Failures
 
 Segments are plain, [independently testable](#-testing-segments) classes, so reproduce a suspected bug by exercising the segment directly instead of running the whole pipeline. If you've adopted the [Result pattern](#-collecting-multiple-errors) for multi-error collection, remember that debugging shifts from catching an exception to inspecting the returned `Result`.
 
-### 🗺️ Generated Visual Diagrams
+### 🗺️ Generated Diagrams
 
 To make it easy to visually assess Dovetail's DAG, every generated `ExecuteAsync` carries an XML doc comment with a Mermaid flowchart of that pipeline's computed segment graph. Most IDEs won't render Mermaid directly in a tooltip, but the diagram can be copied into [mermaid.live](https://mermaid.live) or any other Mermaid viewer.
 
@@ -536,7 +552,7 @@ Segments that don't depend on each other run genuinely concurrently, not just as
 
 * **Fan-out is unbounded by default.** Every eligible segment starts at once, so a pipeline fanning out to a few dozen segments that each call an external API fires that many concurrent calls simultaneously, making connection-pool exhaustion and rate-limit responses a real risk. [`[MaxConcurrency(n)]`](#-managing-concurrency) bounds this per pipeline, but it's still easy to undercount the real concurrency of an outer pipeline: the limit doesn't compound automatically, so a nested pipeline used as a segment ([Pipelines-as-Segments](#-pipelines-as-segments)) fans out independently of its parent's limit.
 
-### ♻️ Endomorphic Segments
+### ♻️ Endomorphism
 
 An _endomorphic_ segment is one that consumes and produces the same type: `IPipelineSegment<T, T>`. These frequently come up in use cases like refinement, enrichment, and validation. Dovetail supports exactly one such segment per type in a pipeline, even though in other cases Dovetail explicitly forbids two segments producing the same type. As long as one segment (or the pipeline's own input) produces a type and one other segment both consumes and produces that same type, Dovetail chains them automatically, and anything else in the pipeline that needs the type receives the refined value, not the original.
 
@@ -625,7 +641,7 @@ public class ProcessingSegment(...) : IPipelineSegment<Result<DbRecord>, Result<
 }
 ```
 
-### ⁉️ Conditional Segment Execution
+### ⁉️ Conditional Execution
 
 Dovetail has no dedicated feature for conditional execution, but because segments are just plain classes with constructor-injected dependencies, wrapping one in another gets you a limited form of it for free.
 
@@ -670,7 +686,7 @@ public partial class OuterPipeline(
 ) : IPipeline<First, Fifth>;
 ```
 
-### 🧪 Testing Segments
+### 🧪 Testing
 
 Segments are plain classes with constructor-injected dependencies so you can test them exactly like you'd test any other class, with whatever approach you already use:
 
