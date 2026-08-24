@@ -14,7 +14,7 @@ internal static class Render
                 <svg height="32" viewBox="2 16 96 68" role="img" aria-label="Dovetail">
                   <defs>
                     <linearGradient id="dovetailLogoGradient" x1="0%" y1="0%" x2="100%" y2="0%" gradientUnits="userSpaceOnUse" gradientTransform="rotate(45)">
-                      <stop offset="0%" stop-color="#FF674D" />
+                      <stop offset="0%" stop-color="#FF7D00" />
                       <stop offset="100%" stop-color="#8A4FA8" />
                     </linearGradient>
                   </defs>
