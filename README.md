@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>
-<img alt="Dovetail" src="logo-color.svg" height="64">
+<img alt="Dovetail" src="Dovetail/icon.svg" height="64">
   
 Dovetail
 </h1>
