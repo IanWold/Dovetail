@@ -205,6 +205,62 @@ public class EndomorphismChainTests
     }
 
     [Fact]
+    public async Task MultiInputEndomorphicSegment_WithOneChainParticipatingInput_ResolvesEachInputCorrectly()
+    {
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public readonly record struct U(int Value);
+            public readonly record struct V(int Value);
+
+            public class OriginSegment : IPipelineSegment<int, U>
+            {
+                public Task<U> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(new U(value));
+            }
+
+            public class IntermediateSegment : IPipelineSegment<string, V>
+            {
+                public Task<V> ExecuteAsync(string value, CancellationToken ct) => Task.FromResult(new V(value.Length));
+            }
+
+            public class RefineSegment : IPipelineSegment<U, V, U>
+            {
+                public Task<U> ExecuteAsync(U uValue, V vValue, CancellationToken ct) => Task.FromResult(new U(uValue.Value + vValue.Value));
+            }
+
+            public class CombineSegment : IPipelineSegment<U, long>
+            {
+                public Task<long> ExecuteAsync(U u, CancellationToken ct) => Task.FromResult((long)u.Value);
+            }
+
+            public partial class MixedChainPipeline(
+                [Segment] OriginSegment origin,
+                [Segment] IntermediateSegment intermediate,
+                [Segment] RefineSegment refine,
+                [Segment] CombineSegment combine
+            ) : IPipeline<int, string, long>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+        var pipelineType = assembly.GetType("Sample.MixedChainPipeline")!;
+        var origin = Activator.CreateInstance(assembly.GetType("Sample.OriginSegment")!)!;
+        var intermediate = Activator.CreateInstance(assembly.GetType("Sample.IntermediateSegment")!)!;
+        var refine = Activator.CreateInstance(assembly.GetType("Sample.RefineSegment")!)!;
+        var combine = Activator.CreateInstance(assembly.GetType("Sample.CombineSegment")!)!;
+        var pipeline = Activator.CreateInstance(pipelineType, origin, intermediate, refine, combine)!;
+
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<long>)method.Invoke(pipeline, [5, "hi", CancellationToken.None])!;
+        var result = await task;
+
+        Assert.Equal(7, result);
+    }
+
+    [Fact]
     public void ReportsDiagnostic_WhenThreeSegmentsProduceTheSameType()
     {
         const string source = """
