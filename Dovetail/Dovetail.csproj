@@ -44,7 +44,7 @@
     <PropertyGroup>
       <_NuGetReadmePath>$(IntermediateOutputPath)README.md</_NuGetReadmePath>
     </PropertyGroup>
-    <Exec Command="awk '/^---$/{f=1; next} f' &quot;$(MSBuildProjectDirectory)/../README.md&quot; &gt; &quot;$(_NuGetReadmePath)&quot;" />
+    <Exec Command="awk '/^---$/{f=1; next} f &amp;&amp; !/&gt; \[![A-Z]*\]/' &quot;$(MSBuildProjectDirectory)/../README.md&quot; &gt; &quot;$(_NuGetReadmePath)&quot;" />
     <ItemGroup>
       <None Include="$(_NuGetReadmePath)" Pack="true" PackagePath="README.md" Visible="false" />
     </ItemGroup>
