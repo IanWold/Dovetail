@@ -36,7 +36,7 @@ bld/
 [Ll]ogs/
 
 # Roslyn source-generator output emitted to disk for inspection (EmitCompilerGeneratedFiles)
-Dovetail.Example/Generated/
+Dovetail.Example/Generated/Microsoft.AspNetCore.App.SourceGenerators/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
