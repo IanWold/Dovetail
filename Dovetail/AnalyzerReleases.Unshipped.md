@@ -5,3 +5,4 @@
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
+DOVE021 | Dovetail.SourceGenerator | Error | Segment dependency ambiguity depends on another unresolved ambiguity

@@ -566,13 +566,23 @@ public partial class MyPipeline(
 
 Chains of endomorphic segments (i.e. multiple `IPipelineSegment<B, B>` segments in the example above) are explicitly not supported; Dovetail favors simplicity over supporting smaller edge cases. Executing a chain of endomorphic segments is trivially simple to hand-write, so the recommended workaround is to write a single segment that sequentially executes the pieces.
 
-Also explicitly not supported are graph structures where some subset of the graph composes to an endomorphism, such as the following where the middle two segments could be considered a single endomorphic segment when taken together:
+Dovetail does support endomorphic _pipelines_, when several sections compose to a pipeline that has the same input and output:
+
+```csharp
+public partial class MyPipeline(
+    [Segment] IPipelineSegment<A, B> aToB,
+    [Segment] IPipelineSegment<B, C> bToC,
+    [Segment] IPipelineSegment<C, A> cToA
+) : IPipeline<A, A>;
+```
+
+However, Dovetail explicitly does not support graph structures where some _subset_ of the graph composes to an endomorphism, such as the following where the middle two segments could be considered a single endomorphic segment when taken together:
 
 ```
 (A => B) -> (B => C) -> (C => B) -> (B => D)
 ```
 
-In these cases, the recommended approach is to compose the middle two segments together in a [pipeline-as-segment](#-pipelines-as-segments). This forces your code to specifically acknowledge the intent to treat the subgraph as an endomorphism.
+In these cases, the recommended approach is to compose the middle two segments together as an endomoprhic [pipeline-as-segment](#-pipelines-as-segments). This forces your code to specifically acknowledge the intent to treat the subgraph as an endomorphism.
 
 ### 💥 Exception Handling
 
@@ -736,3 +746,4 @@ public class PermissionsSegmentTests
 | DOVE018 | A segment's input ambiguously matches both a pipeline input and another segment's result; give one of them a distinct type. |
 | DOVE019 | `[MaxConcurrency(n)]`'s value must be 1 or greater; use a positive integer, or remove the attribute. |
 | DOVE020 | Segments producing the same type don't form a single valid chain (more than one may both consume and produce it, or three or more produce it at once); remove the extras, or restructure so only one segment transforms the type into itself. |
+| DOVE021 | A segment's ambiguous input (as in DOVE018) can't be resolved because the segment it might match has its own unresolved ambiguity; resolve that segment's diagnostic first. |

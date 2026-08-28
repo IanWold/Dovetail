@@ -183,4 +183,13 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor InterdependentAmbiguousDependency = new(
+        id: "DOVE021",
+        title: "Segment dependency ambiguity depends on another unresolved ambiguity",
+        messageFormat: "Parameter '{0}' needs an input of type '{1}', which matches both a pipeline input and segment '{2}', but '{2}' has its own unresolved dependency ambiguity, so Dovetail can't tell whether choosing '{2}' would be circular; resolve '{2}''s own ambiguous dependency first (see its diagnostic), then this diagnostic may resolve on its own",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }
