@@ -9,12 +9,8 @@ using static Dovetail.Diagnostics;
 namespace Dovetail;
 
 [Generator(LanguageNames.CSharp)]
-internal sealed class PipelineSourceGenerator : IIncrementalGenerator
+internal class PipelineSourceGenerator : IIncrementalGenerator
 {
-    private readonly record struct ChainCandidates(SegmentModel Sink, SegmentModel? Origin);
-
-    private readonly record struct PendingCollision(string ConsumerParameterName, int BindingIndex, string InputType, int PipelineInputIndex, string ProviderParameterName, Location? ConsumerLocation);
-
     private const string SegmentAttributeFullName = "Dovetail.SegmentAttribute";
     private const string ActivitySourceMetadataName = "System.Diagnostics.ActivitySource";
     internal const string SegmentParametersTrackingName = "SegmentParameters";
