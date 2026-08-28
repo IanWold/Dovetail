@@ -51,9 +51,27 @@ partial class OrderConfirmationPipeline
         {
             return await AssembleTask.ConfigureAwait(false);
         }
+        catch (global::System.OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            activity?.SetTag("dovetail.canceled", true);
+            cts.Cancel();
+
+            try { await global::System.Threading.Tasks.Task.WhenAll(orderTask, OrderDetailsToUserIdTask, customerTask, paymentTask, shipmentTask).ConfigureAwait(false); }
+            catch { }
+
+            throw;
+        }
         catch (global::System.Exception ex)
         {
             activity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                "exception",
+                tags: new global::System.Diagnostics.ActivityTagsCollection
+                {
+                    ["exception.type"] = ex.GetType().FullName,
+                    ["exception.message"] = ex.Message,
+                    ["exception.stacktrace"] = ex.ToString(),
+                }));
             cts.Cancel();
 
             try { await global::System.Threading.Tasks.Task.WhenAll(orderTask, OrderDetailsToUserIdTask, customerTask, paymentTask, shipmentTask).ConfigureAwait(false); }
@@ -72,9 +90,22 @@ partial class OrderConfirmationPipeline
             {
                 return await order.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }
@@ -89,9 +120,22 @@ partial class OrderConfirmationPipeline
             {
                 return OrderDetailsToUserId(await orderTask.ConfigureAwait(false));
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }
@@ -106,9 +150,22 @@ partial class OrderConfirmationPipeline
             {
                 return await customer.ExecuteAsync(await OrderDetailsToUserIdTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }
@@ -123,9 +180,22 @@ partial class OrderConfirmationPipeline
             {
                 return await payment.ExecuteAsync(await orderTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }
@@ -140,9 +210,22 @@ partial class OrderConfirmationPipeline
             {
                 return await shipment.ExecuteAsync(await orderTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }
@@ -157,9 +240,22 @@ partial class OrderConfirmationPipeline
             {
                 return Assemble(await orderTask.ConfigureAwait(false), await customerTask.ConfigureAwait(false), await paymentTask.ConfigureAwait(false), await shipmentTask.ConfigureAwait(false));
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }

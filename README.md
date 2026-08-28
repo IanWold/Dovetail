@@ -28,7 +28,7 @@ public partial class UserSummaryPipeline(
 ) : IPipeline<UserId, UserSummary>;
 ```
 
-Dovetail extensively checks your pipelines with clear, helpful diagnostic messages, ensuring issues are caught at compile time.
+The execution logic is generated with concurrency management and granular tracing built-in. The pipelines are extensively validated with clear, helpful diagnostic messages, ensuring issues are caught at compile time.
 
 ## 📖 Table of Contents
 
@@ -396,7 +396,11 @@ builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource("Dovetail"));
 ```
 
-Every pipeline's `ExecuteAsync` starts an activity named `"{Pipeline}.ExecuteAsync"`, and each segment gets its own nested `"{Pipeline}.{segment}"` activity, nested such that a segment's span starts while it's still the ambient activity from the pipeline that kicked it off. Each activity carries `dovetail.pipeline`, and segment activities also carry `dovetail.segment` (its role in this pipeline) and `dovetail.segment.type` (its concrete class). If a segment throws, its activity is marked `Error` before the exception propagates.
+Every pipeline's `ExecuteAsync` starts an activity named `"{Pipeline}.ExecuteAsync"`, and each segment gets its own nested `"{Pipeline}.{segment}"` activity, nested such that a segment's span starts while it's still the ambient activity from the pipeline that kicked it off. Each activity carries `dovetail.pipeline`, and segment activities also carry `dovetail.segment` (its role in this pipeline) and `dovetail.segment.type` (its concrete class).
+
+If a segment throws, its activity is marked `Error` and gets an `"exception"` event carrying `exception.type`, `exception.message`, and `exception.stacktrace`; most tracing backends (Jaeger, Honeycomb, etc) render this specially, so the failure and its stack trace show up directly in the trace, not just a red span. The pipeline's own top-level activity gets the same treatment for whichever exception ultimately propagates out of `ExecuteAsync`.
+
+Cancellation is distinguished from failure: if a segment (or the whole pipeline) stops because the caller's own token was canceled, its activity is tagged `dovetail.segment.canceled` (or, at the pipeline level, `dovetail.canceled`) instead of being marked `Error`.
 
 > [!IMPORTANT]
 > Like the dependency injection generation, the tracing logic is only generated when `System.Diagnostics.DiagnosticSource` is available; Dovetail doesn't depend on it. When the namespace is unavailable, `ExecuteAsync` is generated exactly as if tracing didn't exist.
