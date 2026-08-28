@@ -61,6 +61,11 @@ public class MaxConcurrencyTests
         Assert.Contains("await concurrencyGate.WaitAsync(linkedToken).ConfigureAwait(false);", text);
         Assert.Contains("segmentActivity?.SetTag(\"dovetail.segment\", \"foo\");", text);
         Assert.Contains("concurrencyGate.Release();", text);
+        Assert.Contains("catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)", text);
+        Assert.Contains("segmentActivity?.SetTag(\"dovetail.segment.canceled\", true);", text);
+        Assert.Contains("segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(", text);
+        Assert.Contains("[\"exception.type\"] = ex.GetType().FullName,", text);
+        Assert.Contains("[\"exception.stacktrace\"] = ex.ToString(),", text);
     }
 
     [Fact]

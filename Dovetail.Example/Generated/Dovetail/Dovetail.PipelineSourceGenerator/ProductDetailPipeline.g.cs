@@ -55,9 +55,27 @@ partial class ProductDetailPipeline
         {
             return await AssembleTask.ConfigureAwait(false);
         }
+        catch (global::System.OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            activity?.SetTag("dovetail.canceled", true);
+            cts.Cancel();
+
+            try { await global::System.Threading.Tasks.Task.WhenAll(catalogTask, pricingTask, inventoryTask, reviewsTask, recommendationsTask).ConfigureAwait(false); }
+            catch { }
+
+            throw;
+        }
         catch (global::System.Exception ex)
         {
             activity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                "exception",
+                tags: new global::System.Diagnostics.ActivityTagsCollection
+                {
+                    ["exception.type"] = ex.GetType().FullName,
+                    ["exception.message"] = ex.Message,
+                    ["exception.stacktrace"] = ex.ToString(),
+                }));
             cts.Cancel();
 
             try { await global::System.Threading.Tasks.Task.WhenAll(catalogTask, pricingTask, inventoryTask, reviewsTask, recommendationsTask).ConfigureAwait(false); }
@@ -79,9 +97,22 @@ partial class ProductDetailPipeline
                 {
                     return await catalog.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
                 }
+                catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                {
+                    segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                    throw;
+                }
                 catch (global::System.Exception ex)
                 {
                     segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                    segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                        "exception",
+                        tags: new global::System.Diagnostics.ActivityTagsCollection
+                        {
+                            ["exception.type"] = ex.GetType().FullName,
+                            ["exception.message"] = ex.Message,
+                            ["exception.stacktrace"] = ex.ToString(),
+                        }));
                     throw;
                 }
             }
@@ -104,9 +135,22 @@ partial class ProductDetailPipeline
                 {
                     return await pricing.ExecuteAsync(await catalogTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
                 }
+                catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                {
+                    segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                    throw;
+                }
                 catch (global::System.Exception ex)
                 {
                     segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                    segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                        "exception",
+                        tags: new global::System.Diagnostics.ActivityTagsCollection
+                        {
+                            ["exception.type"] = ex.GetType().FullName,
+                            ["exception.message"] = ex.Message,
+                            ["exception.stacktrace"] = ex.ToString(),
+                        }));
                     throw;
                 }
             }
@@ -129,9 +173,22 @@ partial class ProductDetailPipeline
                 {
                     return await inventory.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
                 }
+                catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                {
+                    segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                    throw;
+                }
                 catch (global::System.Exception ex)
                 {
                     segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                    segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                        "exception",
+                        tags: new global::System.Diagnostics.ActivityTagsCollection
+                        {
+                            ["exception.type"] = ex.GetType().FullName,
+                            ["exception.message"] = ex.Message,
+                            ["exception.stacktrace"] = ex.ToString(),
+                        }));
                     throw;
                 }
             }
@@ -154,9 +211,22 @@ partial class ProductDetailPipeline
                 {
                     return await reviews.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
                 }
+                catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                {
+                    segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                    throw;
+                }
                 catch (global::System.Exception ex)
                 {
                     segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                    segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                        "exception",
+                        tags: new global::System.Diagnostics.ActivityTagsCollection
+                        {
+                            ["exception.type"] = ex.GetType().FullName,
+                            ["exception.message"] = ex.Message,
+                            ["exception.stacktrace"] = ex.ToString(),
+                        }));
                     throw;
                 }
             }
@@ -179,9 +249,22 @@ partial class ProductDetailPipeline
                 {
                     return await recommendations.ExecuteAsync(await catalogTask.ConfigureAwait(false), linkedToken).ConfigureAwait(false);
                 }
+                catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                {
+                    segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                    throw;
+                }
                 catch (global::System.Exception ex)
                 {
                     segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                    segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                        "exception",
+                        tags: new global::System.Diagnostics.ActivityTagsCollection
+                        {
+                            ["exception.type"] = ex.GetType().FullName,
+                            ["exception.message"] = ex.Message,
+                            ["exception.stacktrace"] = ex.ToString(),
+                        }));
                     throw;
                 }
             }
@@ -204,9 +287,22 @@ partial class ProductDetailPipeline
                 {
                     return Assemble(await catalogTask.ConfigureAwait(false), await pricingTask.ConfigureAwait(false), await inventoryTask.ConfigureAwait(false), await reviewsTask.ConfigureAwait(false), await recommendationsTask.ConfigureAwait(false));
                 }
+                catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                {
+                    segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                    throw;
+                }
                 catch (global::System.Exception ex)
                 {
                     segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                    segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                        "exception",
+                        tags: new global::System.Diagnostics.ActivityTagsCollection
+                        {
+                            ["exception.type"] = ex.GetType().FullName,
+                            ["exception.message"] = ex.Message,
+                            ["exception.stacktrace"] = ex.ToString(),
+                        }));
                     throw;
                 }
             }

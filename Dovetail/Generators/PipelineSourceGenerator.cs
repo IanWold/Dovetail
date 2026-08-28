@@ -936,38 +936,62 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             builder.AppendLine($"        var {segment.ParameterName}Task = {ToPascalCase(segment.ParameterName)}Async();");
         }
 
-        builder.AppendLine()
-            .AppendLine( "        try")
-            .AppendLine( "        {")
-            .AppendLine($"            return await {terminalParameterName}Task.ConfigureAwait(false);")
-            .AppendLine( "        }")
-            .AppendLine(hasActivitySource ? "        catch (global::System.Exception ex)" : "        catch")
-            .AppendLine( "        {");
-
-        if (hasActivitySource)
-        {
-            builder.AppendLine("            activity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);");
-        }
-
-        builder.AppendLine("            cts.Cancel();")
-            .AppendLine();
-
         var siblingTasks = string.Join(", ", segments
             .Where(s => s.ParameterName != terminalParameterName)
             .Select(s => $"{s.ParameterName}Task"));
 
-        if (siblingTasks.Length > 0)
+        builder.AppendLine()
+            .AppendLine( "        try")
+            .AppendLine( "        {")
+            .AppendLine($"            return await {terminalParameterName}Task.ConfigureAwait(false);")
+            .AppendLine( "        }");
+
+        if (hasActivitySource)
         {
             builder
-                .AppendLine($"            try {{ await global::System.Threading.Tasks.Task.WhenAll({siblingTasks}).ConfigureAwait(false); }}")
-                .AppendLine("            catch { }")
+                .AppendLine("        catch (global::System.OperationCanceledException) when (token.IsCancellationRequested)")
+                .AppendLine("        {")
+                .AppendLine("            activity?.SetTag(\"dovetail.canceled\", true);")
+                .AppendLine("            cts.Cancel();")
+                .AppendLine();
+
+            AppendSiblingDrain(builder, siblingTasks, "            ");
+
+            builder
+                .AppendLine("            throw;")
+                .AppendLine("        }")
+                .AppendLine("        catch (global::System.Exception ex)")
+                .AppendLine("        {")
+                .AppendLine("            activity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);");
+
+            AppendExceptionEvent(builder, "            ", "activity");
+
+            builder
+                .AppendLine("            cts.Cancel();")
+                .AppendLine();
+
+            AppendSiblingDrain(builder, siblingTasks, "            ");
+
+            builder
+                .AppendLine("            throw;")
+                .AppendLine("        }")
                 .AppendLine();
         }
+        else
+        {
+            builder
+                .AppendLine("        catch")
+                .AppendLine("        {")
+                .AppendLine("            cts.Cancel();")
+                .AppendLine();
 
-        builder
-            .AppendLine("            throw;")
-            .AppendLine("        }")
-            .AppendLine();
+            AppendSiblingDrain(builder, siblingTasks, "            ");
+
+            builder
+                .AppendLine("            throw;")
+                .AppendLine("        }")
+                .AppendLine();
+        }
 
         foreach (var segment in segments)
         {
@@ -1006,9 +1030,18 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
                     .AppendLine( "                {")
                     .AppendLine($"                    return {callExpression};")
                     .AppendLine( "                }")
+                    .AppendLine( "                catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)")
+                    .AppendLine( "                {")
+                    .AppendLine( "                    segmentActivity?.SetTag(\"dovetail.segment.canceled\", true);")
+                    .AppendLine( "                    throw;")
+                    .AppendLine( "                }")
                     .AppendLine( "                catch (global::System.Exception ex)")
                     .AppendLine( "                {")
-                    .AppendLine( "                    segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);")
+                    .AppendLine( "                    segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);");
+
+                AppendExceptionEvent(builder, "                    ", "segmentActivity");
+
+                builder
                     .AppendLine( "                    throw;")
                     .AppendLine( "                }")
                     .AppendLine( "            }")
@@ -1049,9 +1082,18 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
                     .AppendLine( "            {")
                     .AppendLine($"                return {callExpression};")
                     .AppendLine( "            }")
+                    .AppendLine( "            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)")
+                    .AppendLine( "            {")
+                    .AppendLine( "                segmentActivity?.SetTag(\"dovetail.segment.canceled\", true);")
+                    .AppendLine( "                throw;")
+                    .AppendLine( "            }")
                     .AppendLine( "            catch (global::System.Exception ex)")
                     .AppendLine( "            {")
-                    .AppendLine( "                segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);")
+                    .AppendLine( "                segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);");
+
+                AppendExceptionEvent(builder, "                ", "segmentActivity");
+
+                builder
                     .AppendLine( "                throw;")
                     .AppendLine( "            }")
                     .AppendLine( "        }")
@@ -1129,6 +1171,32 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             .AppendLine("    internal static readonly global::System.Diagnostics.ActivitySource Instance = new global::System.Diagnostics.ActivitySource(\"Dovetail\");")
             .AppendLine("}")
             .ToString();
+
+    private static void AppendExceptionEvent(StringBuilder builder, string indent, string activityVariableName)
+    {
+        builder
+            .AppendLine($"{indent}{activityVariableName}?.AddEvent(new global::System.Diagnostics.ActivityEvent(")
+            .AppendLine($"{indent}    \"exception\",")
+            .AppendLine($"{indent}    tags: new global::System.Diagnostics.ActivityTagsCollection")
+            .AppendLine($"{indent}    {{")
+            .AppendLine($"{indent}        [\"exception.type\"] = ex.GetType().FullName,")
+            .AppendLine($"{indent}        [\"exception.message\"] = ex.Message,")
+            .AppendLine($"{indent}        [\"exception.stacktrace\"] = ex.ToString(),")
+            .AppendLine($"{indent}    }}));");
+    }
+
+    private static void AppendSiblingDrain(StringBuilder builder, string siblingTasks, string indent)
+    {
+        if (siblingTasks.Length == 0)
+        {
+            return;
+        }
+
+        builder
+            .AppendLine($"{indent}try {{ await global::System.Threading.Tasks.Task.WhenAll({siblingTasks}).ConfigureAwait(false); }}")
+            .AppendLine($"{indent}catch {{ }}")
+            .AppendLine();
+    }
 
     private static string ToPascalCase(string name) =>
         name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name.Substring(1);

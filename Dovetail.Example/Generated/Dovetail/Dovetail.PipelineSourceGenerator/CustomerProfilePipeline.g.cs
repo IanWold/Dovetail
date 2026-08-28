@@ -40,9 +40,27 @@ partial class CustomerProfilePipeline
         {
             return await AssembleTask.ConfigureAwait(false);
         }
+        catch (global::System.OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            activity?.SetTag("dovetail.canceled", true);
+            cts.Cancel();
+
+            try { await global::System.Threading.Tasks.Task.WhenAll(accountTask, loyaltyTask).ConfigureAwait(false); }
+            catch { }
+
+            throw;
+        }
         catch (global::System.Exception ex)
         {
             activity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                "exception",
+                tags: new global::System.Diagnostics.ActivityTagsCollection
+                {
+                    ["exception.type"] = ex.GetType().FullName,
+                    ["exception.message"] = ex.Message,
+                    ["exception.stacktrace"] = ex.ToString(),
+                }));
             cts.Cancel();
 
             try { await global::System.Threading.Tasks.Task.WhenAll(accountTask, loyaltyTask).ConfigureAwait(false); }
@@ -61,9 +79,22 @@ partial class CustomerProfilePipeline
             {
                 return await account.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }
@@ -78,9 +109,22 @@ partial class CustomerProfilePipeline
             {
                 return await loyalty.ExecuteAsync(input, linkedToken).ConfigureAwait(false);
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }
@@ -95,9 +139,22 @@ partial class CustomerProfilePipeline
             {
                 return Assemble(await accountTask.ConfigureAwait(false), await loyaltyTask.ConfigureAwait(false));
             }
+            catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)
+            {
+                segmentActivity?.SetTag("dovetail.segment.canceled", true);
+                throw;
+            }
             catch (global::System.Exception ex)
             {
                 segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(
+                    "exception",
+                    tags: new global::System.Diagnostics.ActivityTagsCollection
+                    {
+                        ["exception.type"] = ex.GetType().FullName,
+                        ["exception.message"] = ex.Message,
+                        ["exception.stacktrace"] = ex.ToString(),
+                    }));
                 throw;
             }
         }

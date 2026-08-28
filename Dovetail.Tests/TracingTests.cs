@@ -42,6 +42,15 @@ public class TracingTests
         Assert.Contains("segmentActivity?.SetTag(\"dovetail.segment\", \"foo\");", pipelineSource);
         Assert.Contains("segmentActivity?.SetTag(\"dovetail.segment.type\", \"Sample.FooSegment\");", pipelineSource);
         Assert.Contains("segmentActivity?.SetStatus(global::System.Diagnostics.ActivityStatusCode.Error, ex.Message);", pipelineSource);
+        Assert.Contains("catch (global::System.OperationCanceledException) when (linkedToken.IsCancellationRequested)", pipelineSource);
+        Assert.Contains("segmentActivity?.SetTag(\"dovetail.segment.canceled\", true);", pipelineSource);
+        Assert.Contains("catch (global::System.OperationCanceledException) when (token.IsCancellationRequested)", pipelineSource);
+        Assert.Contains("activity?.SetTag(\"dovetail.canceled\", true);", pipelineSource);
+        Assert.Contains("activity?.AddEvent(new global::System.Diagnostics.ActivityEvent(", pipelineSource);
+        Assert.Contains("segmentActivity?.AddEvent(new global::System.Diagnostics.ActivityEvent(", pipelineSource);
+        Assert.Contains("[\"exception.type\"] = ex.GetType().FullName,", pipelineSource);
+        Assert.Contains("[\"exception.message\"] = ex.Message,", pipelineSource);
+        Assert.Contains("[\"exception.stacktrace\"] = ex.ToString(),", pipelineSource);
     }
 
     [Fact]
@@ -145,5 +154,140 @@ public class TracingTests
         var doublerActivity = Assert.Single(startedActivities, a => a.OperationName == "NumberPipeline.doubler");
         Assert.Equal("doubler", doublerActivity.GetTagItem("dovetail.segment"));
         Assert.Equal("Sample.DoubleSegment", doublerActivity.GetTagItem("dovetail.segment.type"));
+    }
+
+    [Fact]
+    public async Task GeneratedPipeline_RecordsExceptionEventAndErrorStatus_WhenASegmentThrows()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) =>
+                    throw new InvalidOperationException("boom");
+            }
+
+            public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+
+        var dovetailActivitySource = (ActivitySource)assembly.GetType("Dovetail.DovetailActivitySource")!
+            .GetField("Instance", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetValue(null)!;
+
+        var startedActivities = new System.Collections.Concurrent.ConcurrentBag<Activity>();
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = activitySource => ReferenceEquals(activitySource, dovetailActivitySource),
+            Sample = (ref _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => startedActivities.Add(activity),
+        };
+
+        ActivitySource.AddActivityListener(listener);
+
+        try
+        {
+            var pipelineType = assembly.GetType("Sample.FooPipeline")!;
+            var foo = Activator.CreateInstance(assembly.GetType("Sample.FooSegment")!)!;
+            var pipeline = Activator.CreateInstance(pipelineType, foo)!;
+
+            var method = pipelineType.GetMethod("ExecuteAsync")!;
+            var task = (Task<string>)method.Invoke(pipeline, [21, CancellationToken.None])!;
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => task);
+
+            Assert.Equal("boom", ex.Message);
+        }
+        finally
+        {
+            listener.Dispose();
+        }
+
+        var segmentActivity = Assert.Single(startedActivities, a => a.OperationName == "FooPipeline.foo");
+        Assert.Equal(ActivityStatusCode.Error, segmentActivity.Status);
+
+        var segmentEvent = Assert.Single(segmentActivity.Events, e => e.Name == "exception");
+        var segmentTags = segmentEvent.Tags.ToDictionary(t => t.Key, t => t.Value);
+        
+        Assert.Equal("System.InvalidOperationException", segmentTags["exception.type"]);
+        Assert.Equal("boom", segmentTags["exception.message"]);
+        Assert.Contains("boom", (string)segmentTags["exception.stacktrace"]!);
+
+        var pipelineActivity = Assert.Single(startedActivities, a => a.OperationName == "FooPipeline.ExecuteAsync");
+        Assert.Equal(ActivityStatusCode.Error, pipelineActivity.Status);
+        Assert.Single(pipelineActivity.Events, e => e.Name == "exception");
+    }
+
+    [Fact]
+    public async Task GeneratedPipeline_TagsCancellation_WithoutErrorStatus_WhenTheCallerCancels()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(value.ToString());
+                }
+            }
+
+            public partial class FooPipeline([Segment] FooSegment foo) : IPipeline<int, string>;
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator());
+
+        var dovetailActivitySource = (ActivitySource)assembly.GetType("Dovetail.DovetailActivitySource")!
+            .GetField("Instance", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetValue(null)!;
+
+        var startedActivities = new System.Collections.Concurrent.ConcurrentBag<Activity>();
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = activitySource => ReferenceEquals(activitySource, dovetailActivitySource),
+            Sample = (ref _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => startedActivities.Add(activity),
+        };
+
+        ActivitySource.AddActivityListener(listener);
+
+        try
+        {
+            var pipelineType = assembly.GetType("Sample.FooPipeline")!;
+            var foo = Activator.CreateInstance(assembly.GetType("Sample.FooSegment")!)!;
+            var pipeline = Activator.CreateInstance(pipelineType, foo)!;
+
+            var method = pipelineType.GetMethod("ExecuteAsync")!;
+            var task = (Task<string>)method.Invoke(pipeline, [21, new CancellationToken(canceled: true)])!;
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => task);
+        }
+        finally
+        {
+            listener.Dispose();
+        }
+
+        var segmentActivity = Assert.Single(startedActivities, a => a.OperationName == "FooPipeline.foo");
+        Assert.NotEqual(ActivityStatusCode.Error, segmentActivity.Status);
+        Assert.Equal(true, segmentActivity.GetTagItem("dovetail.segment.canceled"));
+        Assert.DoesNotContain(segmentActivity.Events, e => e.Name == "exception");
+
+        var pipelineActivity = Assert.Single(startedActivities, a => a.OperationName == "FooPipeline.ExecuteAsync");
+        Assert.NotEqual(ActivityStatusCode.Error, pipelineActivity.Status);
+        Assert.Equal(true, pipelineActivity.GetTagItem("dovetail.canceled"));
+        Assert.DoesNotContain(pipelineActivity.Events, e => e.Name == "exception");
     }
 }
