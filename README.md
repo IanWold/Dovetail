@@ -52,9 +52,9 @@ Dovetail extensively checks your pipelines with clear, helpful diagnostic messag
 
 **Real parallelism, no boilerplate:** Segments that don't depend on each other run concurrently automatically; you never hand-write `Task.WhenAll` and you never accidentally serialize independent work by awaiting too early. Cancellation propagation, draining in-flight work when something fails, and bounding concurrency are all the kind of thing that's easy to get subtly wrong by hand.
 
-**Generated code you can actually read:** `ExecuteAsync` is plain async/await, nothing you couldn't have written yourself, just correctly and without the tedium. No runtime reflection, no DI container in the hot path, nothing hidden behind the generator once your project is built.
+**Granular tracing built in:** Each segment in each pipeline reports its own tracing data, giving you granular, per-segment timing in whatever's already consuming your traces without instrumenting a single line yourself.
 
-**Lightweight and quick to set up:** One NuGet package, no forced dependencies, no base classes to inherit, no configuration files, no startup registration required. A segment is a class implementing one interface; a pipeline is a partial class with a few `[Segment]` attributes.
+**Built for developer experience:** Beyond helpful diagnostic messages, Dovetail generates a Mermaid diagram of every pipeline's shape as an XML doc comment, and [Dovetail.Report](#-dovetailreport-tool) generates a browsable, offline HTML report showing the execution graph of each pipline without tracing it back through constructors by hand.
 
 ### 🎯 Who Dovetail Is For
 
