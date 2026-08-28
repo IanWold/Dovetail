@@ -54,15 +54,10 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         });
     }
 
-    private static SegmentParameterInfo? GetSegmentParameter(GeneratorAttributeSyntaxContext context)
-    {
-        if (context.TargetSymbol is not IParameterSymbol parameterSymbol)
-        {
-            return null;
-        }
-
-        return BuildSegmentParameterInfo(parameterSymbol, (ParameterSyntax)context.TargetNode);
-    }
+    private static SegmentParameterInfo? GetSegmentParameter(GeneratorAttributeSyntaxContext context) =>
+        context.TargetSymbol is IParameterSymbol parameterSymbol
+        ? BuildSegmentParameterInfo(parameterSymbol, (ParameterSyntax)context.TargetNode)
+        : null;
 
     private static SegmentParameterInfo? BuildSegmentParameterInfo(IParameterSymbol parameterSymbol, ParameterSyntax parameterSyntax)
     {
@@ -183,7 +178,9 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
     };
 
     private static string GetTypeParameterList(INamedTypeSymbol type) =>
-        type.Arity == 0 ? "" : $"<{string.Join(", ", type.TypeParameters.Select(static t => t.Name))}>";
+        type.Arity != 0
+        ? $"<{string.Join(", ", type.TypeParameters.Select(static t => t.Name))}>"
+        : "";
 
     private static (bool IsPartial, string Keyword) GetPartialityAndKeyword(INamedTypeSymbol type)
     {
@@ -198,35 +195,17 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         return (isPartial, keyword);
     }
 
-    private static int? GetMaxConcurrency(INamedTypeSymbol containingType)
-    {
-        foreach (var attribute in containingType.GetAttributes())
-        {
-            if (attribute.AttributeClass is not { Name: nameof(MaxConcurrencyAttribute) } attributeClass
-                || attributeClass.ContainingNamespace.ToDisplayString() != "Dovetail"
-            )
-            {
-                continue;
-            }
+    private static int? GetMaxConcurrency(INamedTypeSymbol containingType) =>
+        containingType.GetAttributes()
+        .FirstOrDefault(a =>
+            a.AttributeClass is { Name: nameof(MaxConcurrencyAttribute) } attributeClass
+            && attributeClass.ContainingNamespace.ToDisplayString() == "Dovetail"
+            && a.ConstructorArguments.Length == 1
+        )
+        ?.ConstructorArguments[0].Value as int?;
 
-            if (attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is int rawValue)
-            {
-                return rawValue;
-            }
-        }
-
-        return null;
-    }
-
-    private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context)
-    {
-        if (context.TargetSymbol is not IMethodSymbol methodSymbol)
-        {
-            return null;
-        }
-
-        return BuildSegmentMethodInfo(methodSymbol);
-    }
+    private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context) =>
+        context.TargetSymbol is IMethodSymbol methodSymbol ? BuildSegmentMethodInfo(methodSymbol) : null;
 
     private static SegmentParameterInfo? BuildSegmentMethodInfo(IMethodSymbol methodSymbol)
     {
@@ -404,20 +383,8 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         return builder.ToImmutable();
     }
 
-    private static bool HasSegmentAttribute(ImmutableArray<AttributeData> attributes)
-    {
-        foreach (var attribute in attributes)
-        {
-            if (attribute.AttributeClass is { Name: nameof(SegmentAttribute) } attributeClass
-                && attributeClass.ContainingNamespace.ToDisplayString() == "Dovetail"
-            )
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private static bool HasSegmentAttribute(ImmutableArray<AttributeData> attributes) =>
+        attributes.Any(a => a.AttributeClass is { Name: nameof(SegmentAttribute) } attributeClass && attributeClass.ContainingNamespace.ToDisplayString() == "Dovetail");
 
     private static bool Execute(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, SourceProductionContext context, bool hasActivitySource)
     {
@@ -437,7 +404,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
     internal static bool TryBuildGraph(TypeDeclarationModel containingType, ImmutableArray<SegmentParameterInfo> parameters, Action<Diagnostic> reportDiagnostic, out PipelineGraphModel? graph)
     {
         graph = null;
-        var containingTypeLocation = parameters[0].ContainingTypeLocation ?? Location.None;
+        var containingTypeLocation = parameters[0].ContainingTypeLocation ?? Location.None; 
 
         if (!containingType.IsPartial)
         {
@@ -667,6 +634,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
 
         segments = SortByDependency(segments, dependencies);
         graph = new PipelineGraphModel(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminalParameterName, maxConcurrency);
+
         return true;
     }
 
@@ -753,17 +721,15 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
 
             path.Add(parameterName);
 
-            foreach (var binding in dependencies[parameterName])
+            if (dependencies[parameterName].Any(d => d.SegmentParameterName is string providerName && !Visit(providerName)))
             {
-                if (binding.SegmentParameterName is string providerName && !Visit(providerName))
-                {
-                    return false;
-                }
+                return false;
             }
 
             path.RemoveAt(path.Count - 1);
             visiting.Remove(parameterName);
             visited.Add(parameterName);
+
             return true;
         }
 
@@ -818,12 +784,9 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
                 return;
             }
 
-            foreach (var binding in dependencies[parameterName])
+            foreach (var binding in dependencies[parameterName].Where(d => d.SegmentParameterName is not null))
             {
-                if (binding.SegmentParameterName is string providerName)
-                {
-                    Visit(providerName);
-                }
+                Visit(binding.SegmentParameterName!);
             }
 
             sorted.Add(byName[parameterName]);
