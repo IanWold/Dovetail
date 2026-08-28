@@ -13,6 +13,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 {
     private readonly record struct ChainCandidates(SegmentModel Sink, SegmentModel? Origin);
 
+    private readonly record struct PendingCollision(string ConsumerParameterName, int BindingIndex, string InputType, int PipelineInputIndex, string ProviderParameterName, Location? ConsumerLocation);
+
     private const string SegmentAttributeFullName = "Dovetail.SegmentAttribute";
     private const string ActivitySourceMetadataName = "System.Diagnostics.ActivitySource";
     internal const string SegmentParametersTrackingName = "SegmentParameters";
@@ -596,6 +598,7 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
 
         var terminalParameterName = terminalResolution.Sink.ParameterName;
         var dependencies = new Dictionary<string, ImmutableArray<DependencyBinding>>();
+        var pendingCollisions = new List<PendingCollision>();
 
         foreach (var segment in segments)
         {
@@ -612,8 +615,8 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
                 }
                 else if (matchesInput && matchesSegment)
                 {
-                    reportDiagnostic(Diagnostic.Create(AmbiguousDependency, segment.ParameterLocation ?? Location.None, segment.ParameterName, inputType, providerName));
-                    hasErrors = true;
+                    pendingCollisions.Add(new PendingCollision(segment.ParameterName, bindings.Count, inputType, pipelineInputIndex, providerName!, segment.ParameterLocation));
+                    bindings.Add(default);
                 }
                 else if (matchesInput)
                 {
@@ -636,6 +639,11 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         if (hasErrors)
+        {
+            return false;
+        }
+
+        if (pendingCollisions.Count > 0 && !TryResolvePendingCollisions(segments, pendingCollisions, dependencies, reportDiagnostic))
         {
             return false;
         }
@@ -664,6 +672,41 @@ internal sealed class PipelineSourceGenerator : IIncrementalGenerator
         segments = SortByDependency(segments, dependencies);
         graph = new PipelineGraphModel(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminalParameterName, maxConcurrency);
         return true;
+    }
+
+    private static bool TryResolvePendingCollisions(ImmutableArray<SegmentModel> segments, List<PendingCollision> pendingCollisions, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, Action<Diagnostic> reportDiagnostic)
+    {
+        var hasErrors = false;
+        var pendingConsumerNames = new HashSet<string>(pendingCollisions.Select(static p => p.ConsumerParameterName));
+
+        foreach (var pending in pendingCollisions)
+        {
+            if (pendingConsumerNames.Contains(pending.ProviderParameterName))
+            {
+                var providerLocation = segments.First(s => s.ParameterName == pending.ProviderParameterName).ParameterLocation;
+                var additionalLocations = providerLocation is { } location ? new[] { location } : null;
+                
+                reportDiagnostic(Diagnostic.Create(InterdependentAmbiguousDependency, pending.ConsumerLocation ?? Location.None, additionalLocations, pending.ConsumerParameterName, pending.InputType, pending.ProviderParameterName));
+                
+                hasErrors = true;
+                
+                continue;
+            }
+
+            if (ComputeReachableFrom(pending.ProviderParameterName, dependencies).Contains(pending.ConsumerParameterName))
+            {
+                dependencies[pending.ConsumerParameterName] =
+                    dependencies[pending.ConsumerParameterName]
+                    .SetItem(pending.BindingIndex, new DependencyBinding(SegmentParameterName: null, PipelineInputIndex: pending.PipelineInputIndex));
+            }
+            else
+            {
+                reportDiagnostic(Diagnostic.Create(AmbiguousDependency, pending.ConsumerLocation ?? Location.None, pending.ConsumerParameterName, pending.InputType, pending.ProviderParameterName));
+                hasErrors = true;
+            }
+        }
+
+        return !hasErrors;
     }
 
     private static bool TryResolveSegmentProvider(Dictionary<string, ChainCandidates> resultProviders, string inputType, string consumerParameterName, out string? providerName, out bool providerIsEndomorphism)
