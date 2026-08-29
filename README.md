@@ -198,7 +198,7 @@ public partial class UserSummaryPipeline
 ```
 
 > [!NOTE]
-> The code above is simplified for readability. The generator fully qualifies every type it emits, as well as extra handling for telemetry and concurrency management.
+> The code above is simplified for readability. The generator fully qualifies every type it emits, as well as extra handling for telemetry and concurrency management. You can see a full generated file [in the example project](Dovetail.Example/Generated/Dovetail/Dovetail.PipelineSourceGenerator/CustomerProfilePipeline.g.cs).
 
 ### 🔌 Dependency Injection
 
