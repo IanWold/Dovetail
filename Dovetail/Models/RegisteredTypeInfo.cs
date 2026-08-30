@@ -10,5 +10,6 @@ internal readonly record struct RegisteredTypeInfo(
     bool IsValueType,
     DependencyLifetime Lifetime,
     string? SegmentInterfaceTypeNamesJoined,
-    Location? Location
+    Location? Location,
+    bool IsAccessibleForRegistration
 );

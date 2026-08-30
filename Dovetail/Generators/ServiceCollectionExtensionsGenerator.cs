@@ -46,6 +46,13 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
                 return;
             }
 
+            var hasErrors = false;
+            foreach (var inaccessibleType in distinctTypes.Where(static t => !t.IsAccessibleForRegistration))
+            {
+                spc.ReportDiagnostic(Diagnostic.Create(InaccessibleRegisteredType, inaccessibleType.Location ?? Location.None, inaccessibleType.FullyQualifiedName));
+                hasErrors = true;
+            }
+
             var segmentInterfacePairs = distinctTypes
                 .Where(static t => !t.IsPipeline && t.SegmentInterfaceTypeNamesJoined is not null)
                 .SelectMany(static t => t.SegmentInterfaceTypeNamesJoined!
@@ -54,7 +61,6 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
                 )
                 .ToImmutableArray();
 
-            var hasErrors = false;
             foreach (var duplicates in segmentInterfacePairs.ToLookup(static p => p.InterfaceTypeName).Where(static g => g.Count() > 1))
             {
                 var names = string.Join(", ", duplicates.Select(static p => $"'{p.Segment.FullyQualifiedName}'"));
@@ -83,6 +89,7 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
         var fullyQualifiedName = symbol.ToDisplayString(_baseNameFormat);
         var lifetime = GetLifetime(symbol);
         var location = symbol.Locations.FirstOrDefault();
+        var isAccessibleForRegistration = context.SemanticModel.Compilation.IsSymbolAccessibleWithin(symbol, context.SemanticModel.Compilation.Assembly);
 
         var segmentInterfaces = PipelineShapeResolver.GetSegmentInterfaces(symbol);
         if (segmentInterfaces.Length > 0)
@@ -91,12 +98,12 @@ internal sealed class ServiceCollectionExtensionsGenerator : IIncrementalGenerat
                 ? string.Join(InterfaceSeparator, segmentInterfaces)
                 : null;
 
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false, symbol.Arity, symbol.IsValueType, lifetime, interfaceTypeNamesJoined, location);
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: false, symbol.Arity, symbol.IsValueType, lifetime, interfaceTypeNamesJoined, location, isAccessibleForRegistration);
         }
 
         if (PipelineShapeResolver.TryGetPipelineShape(symbol, out _, out _))
         {
-            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true, symbol.Arity, symbol.IsValueType, lifetime, SegmentInterfaceTypeNamesJoined: null, location);
+            return new RegisteredTypeInfo(fullyQualifiedName, IsPipeline: true, symbol.Arity, symbol.IsValueType, lifetime, SegmentInterfaceTypeNamesJoined: null, location, isAccessibleForRegistration);
         }
 
         return null;
