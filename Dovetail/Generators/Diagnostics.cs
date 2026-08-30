@@ -192,4 +192,13 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor InaccessibleRegisteredType = new(
+        id: "DOVE022",
+        title: "Segment or pipeline isn't accessible for automatic DI registration",
+        messageFormat: "'{0}' can't be registered by AddPipelines() because it isn't visible outside its containing type; the generated registration code lives in its own class, so '{0}' and every type containing it must be at least internal, not private or protected",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }

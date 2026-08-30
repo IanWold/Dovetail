@@ -751,3 +751,4 @@ public class PermissionsSegmentTests
 | DOVE019 | `[MaxConcurrency(n)]`'s value must be 1 or greater; use a positive integer, or remove the attribute. |
 | DOVE020 | Segments producing the same type don't form a single valid chain (more than one may both consume and produce it, or three or more produce it at once); remove the extras, or restructure so only one segment transforms the type into itself. |
 | DOVE021 | A segment's ambiguous input (as in DOVE018) can't be resolved because the segment it might match has its own unresolved ambiguity; resolve that segment's diagnostic first. |
+| DOVE022 | `AddPipelines()` can't register a segment or pipeline that's `private` or `protected` (or nested inside a type that is): the generated registration code lives outside it, so it needs to be at least `internal`. |
