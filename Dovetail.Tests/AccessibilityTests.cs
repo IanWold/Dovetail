@@ -214,4 +214,91 @@ public class AccessibilityTests
         Assert.Contains("Outer.FooPipeline", diagnostic.GetMessage());
         Assert.Empty(result.GeneratedTrees);
     }
+
+    [Fact]
+    public async Task SegmentNestedInsideItsOwnPipeline_WrappingAPlainService_RegistersAndResolvesViaDI()
+    {
+        _ = new ServiceCollection();
+
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class MyService
+            {
+                public Task<string> DoThingAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class MyPipeline(
+                [Segment] MyPipeline.MyServiceWrapper myService
+            ) : IPipeline<int, string>
+            {
+                public class MyServiceWrapper(MyService service) : IPipelineSegment<int, string>
+                {
+                    public Task<string> ExecuteAsync(int value, CancellationToken ct) => service.DoThingAsync(value, ct);
+                }
+            }
+            """;
+
+        var assembly = CompileAndLoad(source, new PipelineSourceGenerator(), new ServiceCollectionExtensionsGenerator());
+        var services = new ServiceCollection();
+
+        services.AddTransient(assembly.GetType("Sample.MyService")!);
+
+        var extensionsType = assembly.GetType("Microsoft.Extensions.DependencyInjection.DovetailServiceCollectionExtensions")!;
+
+        extensionsType.GetMethod("AddPipelines")!.Invoke(null, [services]);
+
+        var provider = services.BuildServiceProvider();
+        var pipelineType = assembly.GetType("Sample.MyPipeline")!;
+        var pipeline = provider.GetRequiredService(pipelineType);
+        var method = pipelineType.GetMethod("ExecuteAsync")!;
+        var task = (Task<string>)method.Invoke(pipeline, [21, CancellationToken.None])!;
+        var result = await task;
+
+        Assert.Equal("21", result);
+    }
+
+    [Fact]
+    public void PrivateSegmentNestedInsideItsOwnPipeline_ReportsDove022()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class MyService
+            {
+                public Task<string> DoThingAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class MyPipeline(
+                [Segment] MyPipeline.MyServiceWrapper myService
+            ) : IPipeline<int, string>
+            {
+                private class MyServiceWrapper(MyService service) : IPipelineSegment<int, string>
+                {
+                    public Task<string> ExecuteAsync(int value, CancellationToken ct) => service.DoThingAsync(value, ct);
+                }
+            }
+            """;
+
+        var result = CSharpGeneratorDriver.Create(new ServiceCollectionExtensionsGenerator())
+            .RunGenerators(CreateCompilation(source), TestContext.Current.CancellationToken).GetRunResult();
+
+        var diagnostic = Assert.Single(result.Diagnostics);
+
+        Assert.Equal("DOVE022", diagnostic.Id);
+        Assert.NotEqual(Location.None, diagnostic.Location);
+        Assert.True(diagnostic.Location.IsInSource);
+        Assert.Contains("MyPipeline.MyServiceWrapper", diagnostic.GetMessage());
+        Assert.Empty(result.GeneratedTrees);
+    }
 }
