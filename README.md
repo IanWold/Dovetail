@@ -11,7 +11,7 @@ Dovetail
 
 Easily build fully type-checked, concurrent-running pipelines from composable segments.
 
-[Quickstart](#-quickstart) • [Diagnostics](#-diagnostics) • [Reporting](#-dovetailreport-tool) • [Example](Dovetail.Example)
+[Quickstart](#-quickstart) • [Reference](#-reference) • [Reporting](#-dovetailreport-tool) • [Example](Dovetail.Example)
 
 </div>
 
@@ -44,7 +44,8 @@ The execution logic is generated with concurrency management and granular tracin
     * [Running](#-running) | [Output](#-output) | [Using in CI](#%EF%B8%8F-using-in-ci)
 * **[Architectural Considerations](#%EF%B8%8F-architectural-considerations)**
     * [Concurrency](#-concurrency) | [Endomorphism](#%EF%B8%8F-endomorphism) | [Exception Handling](#-exception-handling) | [Collecting Multiple Errors](#-collecting-multiple-errors) | [Conditional Execution](#%EF%B8%8F-conditional-execution) | [Testing](#-testing)
-* **[Diagnostics](#-diagnostics)**
+* **[Reference](#-reference)**
+    * [Interfaces](#-interfaces) | [Attributes](#%EF%B8%8F-attributes) | [Diagnostics](#-diagnostics)
 
 ## 🕊️ Why Dovetail?
 
@@ -726,7 +727,35 @@ public class PermissionsSegmentTests
 > [!NOTE]
 > `ExecuteAsync` itself isn't something you typically need to unit test as Dovetail generates it, and its correctness (dependency resolution, concurrency, failure handling) is covered by Dovetail's own test suite. Test each segment's logic in isolation, and integration-test the assembled pipeline the same way you'd test anything else built on `IPipeline<...>`.
 
-## 🩺 Diagnostics
+## 🔎 Reference
+
+### 🧩 Interfaces
+
+`IPipeline` flags a class or struct as being a pipeline. The class/struct must be partial. The only member is `Task<TResult> ExecuteAsync(...)`; this member is implemented by Dovetail's source generator.
+
+| Interface | Description |
+|---|---|
+| `IPipeline<TResult>` | A pipeline that has no inputs and produces a `TResult`. |
+| `IPipeline<T1, TResult>` | A pipeline that has one input and produces a `TResult`. |
+| `IPipeline<T1, ..., Tn, TResult>` | A pipeline that has up to `n` inputs (`n <= 8`) and produces a `TResult`. |
+
+`IPipelineSegment` flags a class as a segment that can be used in a pipeline. The only member is `Task<TResult> ExecuteAsync(...)` and must be implemented manually.
+
+| Interface | Description |
+|---|---|
+| `IPipelineSegment<TResult>` | A segment that has no inputs and produces a `TResult`. |
+| `IPipelineSegment<T1, TResult>` | A segment that has one input and produces a `TResult`. |
+| `IPipelineSegment<T1, ..., Tn, TResult>` | A segment that has up to `n` inputs (`n <= 8`) and produces a `TResult`. |
+
+### 🏷️ Attributes
+
+| Attribute | Target | Description |
+|---|---|---|
+| `[MaxConcurrency(n)]` | Classes deriving `IPipeline` | Limits the number of segments running concurrently. When `n = 1` the pipeline runs sequentially. Without the attribute (default) concurrency runs unbounded. |
+| `[Segment]` | Constructor arguments to classes deriving `IPipeline` | Flags the segment as being a part of the pipeline. Injected segments without `[Segment]` will not be used in the pipeline. |
+| `[Segment]` | Static methods in classes deriving `IPipeline` | Flags the method as being a segment of the pipeline. The method must not return `void`. |
+
+### 🩺 Diagnostics
 
 | ID | Meaning |
 |---|---|
