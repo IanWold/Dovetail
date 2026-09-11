@@ -19,5 +19,6 @@ internal readonly record struct SegmentParameterInfo(
     StaticSegmentMethodProblem StaticSegmentMethodProblem,
     bool SegmentIsAsync,
     bool SegmentAcceptsCancellationToken,
-    int? MaxConcurrency
+    int? MaxConcurrency,
+    MaxConcurrencySourceResolution MaxConcurrencySourceResolution
 );

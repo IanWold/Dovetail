@@ -166,9 +166,13 @@ internal static class Render
         builder.AppendLine($"        {graph.Segments.Length} segments ·");
         builder.AppendLine($"        → <strong>{Html(resultTypeName)}</strong>");
 
-        if (graph.MaxConcurrency is int maxConcurrency)
+        if (graph.MaxConcurrencyConstant is int maxConcurrency)
         {
             builder.AppendLine($"        · <mark>MaxConcurrency {maxConcurrency}</mark>");
+        }
+        else if (graph.MaxConcurrencyPropertyName is string maxConcurrencyPropertyName)
+        {
+            builder.AppendLine($"        · <mark>MaxConcurrency from {Html(maxConcurrencyPropertyName)}</mark>");
         }
 
         builder.AppendLine("      </p>");

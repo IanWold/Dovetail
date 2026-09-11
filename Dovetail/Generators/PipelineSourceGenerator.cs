@@ -118,6 +118,8 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             segmentResultTypeName = resolvedResultTypeName;
         }
 
+        var maxConcurrency = GetMaxConcurrency(containingType);
+
         return new SegmentParameterInfo(
             new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType), ownKeyword),
             pipelineInputsJoined,
@@ -135,7 +137,8 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             StaticSegmentMethodProblem: StaticSegmentMethodProblem.None,
             SegmentIsAsync: true,
             SegmentAcceptsCancellationToken: true,
-            GetMaxConcurrency(containingType)
+            maxConcurrency,
+            ResolveMaxConcurrencySource(containingType, maxConcurrency is not null)
         );
     }
 
@@ -204,6 +207,54 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         )
         ?.ConstructorArguments[0].Value as int?;
 
+    private static bool IsMaxConcurrencyAttribute(AttributeData attribute) =>
+        attribute.AttributeClass is { Name: nameof(MaxConcurrencyAttribute) } attributeClass
+        && attributeClass.ContainingNamespace.ToDisplayString() == "Dovetail";
+
+    private static MaxConcurrencySourceResolution ResolveMaxConcurrencySource(INamedTypeSymbol containingType, bool hasConstantSource)
+    {
+        if (containingType.GetAttributes().Any(a => IsMaxConcurrencyAttribute(a) && a.ConstructorArguments.Length == 0))
+        {
+            return new MaxConcurrencySourceResolution(null, null, MaxConcurrencySourceProblem.WrongArityForTarget, null, ImmutableArray<string>.Empty);
+        }
+
+        var attributedProperties = containingType.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Select(static property => (Property: property, Attribute: property.GetAttributes().FirstOrDefault(IsMaxConcurrencyAttribute)))
+            .Where(static candidate => candidate.Attribute is not null)
+            .ToImmutableArray();
+
+        if (attributedProperties.FirstOrDefault(static candidate => candidate.Attribute!.ConstructorArguments.Length != 0) is { Property: { } valuedProperty })
+        {
+            return new MaxConcurrencySourceResolution(null, valuedProperty.Locations.FirstOrDefault(), MaxConcurrencySourceProblem.WrongArityForTarget, null, ImmutableArray<string>.Empty);
+        }
+
+        if (
+            attributedProperties.FirstOrDefault(static candidate =>
+                candidate.Property.IsStatic
+                || candidate.Property.IsIndexer
+                || candidate.Property.GetMethod is null
+                || candidate.Property.Type.SpecialType != SpecialType.System_Int32
+            )
+            is { Property: { } invalidProperty }
+        )
+        {
+            return new MaxConcurrencySourceResolution(null, invalidProperty.Locations.FirstOrDefault(), MaxConcurrencySourceProblem.InvalidPropertyTarget, invalidProperty.Name, ImmutableArray<string>.Empty);
+        }
+
+        if (attributedProperties.Length + (hasConstantSource ? 1 : 0) > 1)
+        {
+            var descriptions = (hasConstantSource ? ["[MaxConcurrency(n)] on the pipeline"] : ImmutableArray<string>.Empty)
+                .AddRange(attributedProperties.Select(static candidate => $"property '{candidate.Property.Name}'"));
+
+            return new MaxConcurrencySourceResolution(null, null, MaxConcurrencySourceProblem.MultipleSources, null, descriptions);
+        }
+
+        return attributedProperties.Length == 1
+            ? new MaxConcurrencySourceResolution(attributedProperties[0].Property.Name, attributedProperties[0].Property.Locations.FirstOrDefault(), MaxConcurrencySourceProblem.None, null, ImmutableArray<string>.Empty)
+            : new MaxConcurrencySourceResolution(null, null, MaxConcurrencySourceProblem.None, null, ImmutableArray<string>.Empty);
+    }
+
     private static SegmentParameterInfo? GetSegmentMethod(GeneratorAttributeSyntaxContext context) =>
         context.TargetSymbol is IMethodSymbol methodSymbol ? BuildSegmentMethodInfo(methodSymbol) : null;
 
@@ -234,6 +285,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
 
         var containingTypeModel = new TypeDeclarationModel(containingNamespace, containingType.Name, isPartial, GetContainingTypes(containingType), GetTypeParameterList(containingType), ownKeyword);
         var maxConcurrency = GetMaxConcurrency(containingType);
+        var maxConcurrencySource = ResolveMaxConcurrencySource(containingType, maxConcurrency is not null);
 
         if (!methodSymbol.IsStatic)
         {
@@ -254,7 +306,8 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
                 StaticSegmentMethodProblem: StaticSegmentMethodProblem.NotStatic,
                 SegmentIsAsync: false,
                 SegmentAcceptsCancellationToken: false,
-                maxConcurrency
+                maxConcurrency,
+                maxConcurrencySource
             );
         }
 
@@ -277,7 +330,8 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
                 StaticSegmentMethodProblem: StaticSegmentMethodProblem.HasOwnTypeParameters,
                 SegmentIsAsync: false,
                 SegmentAcceptsCancellationToken: false,
-                maxConcurrency
+                maxConcurrency,
+                maxConcurrencySource
             );
         }
 
@@ -316,7 +370,8 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
                 StaticSegmentMethodProblem: StaticSegmentMethodProblem.NoReturnValue,
                 SegmentIsAsync: false,
                 SegmentAcceptsCancellationToken: false,
-                maxConcurrency
+                maxConcurrency,
+                maxConcurrencySource
             );
         }
 
@@ -341,7 +396,8 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             StaticSegmentMethodProblem: StaticSegmentMethodProblem.None,
             SegmentIsAsync: isAsyncTask,
             SegmentAcceptsCancellationToken: acceptsCancellationToken,
-            maxConcurrency
+            maxConcurrency,
+            maxConcurrencySource
         );
     }
 
@@ -394,7 +450,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         var model = graph!.Value;
-        var source = GenerateSource(model.ContainingType, model.PipelineInputTypeNames, model.PipelineResultTypeName, model.Segments, model.Dependencies, model.TerminalParameterName, hasActivitySource, model.MaxConcurrency);
+        var source = GenerateSource(model.ContainingType, model.PipelineInputTypeNames, model.PipelineResultTypeName, model.Segments, model.Dependencies, model.TerminalParameterName, hasActivitySource, model.MaxConcurrencyConstant, model.MaxConcurrencyPropertyName);
         
         context.AddSource($"{model.ContainingType.Name}.g.cs", source);
         
@@ -455,6 +511,23 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         {
             reportDiagnostic(Diagnostic.Create(InvalidMaxConcurrency, containingTypeLocation, containingType.Name, maxConcurrency));
             return false;
+        }
+
+        var maxConcurrencySource = parameters[0].MaxConcurrencySourceResolution;
+
+        switch (maxConcurrencySource.MaxConcurrencySourceProblem)
+        {
+            case MaxConcurrencySourceProblem.WrongArityForTarget:
+                reportDiagnostic(Diagnostic.Create(MaxConcurrencyArityMismatch, maxConcurrencySource.PropertyLocation ?? containingTypeLocation, containingType.Name));
+                return false;
+
+            case MaxConcurrencySourceProblem.InvalidPropertyTarget:
+                reportDiagnostic(Diagnostic.Create(InvalidMaxConcurrencyPropertyTarget, maxConcurrencySource.PropertyLocation ?? containingTypeLocation, containingType.Name, maxConcurrencySource.InvalidPropertyName));
+                return false;
+
+            case MaxConcurrencySourceProblem.MultipleSources:
+                reportDiagnostic(Diagnostic.Create(ConflictingMaxConcurrencySources, containingTypeLocation, containingType.Name, string.Join(", ", maxConcurrencySource.ConflictingSourceDescriptions)));
+                return false;
         }
 
         foreach (var parameter in parameters)
@@ -633,7 +706,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         }
 
         segments = SortByDependency(segments, dependencies);
-        graph = new PipelineGraphModel(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminalParameterName, maxConcurrency);
+        graph = new PipelineGraphModel(containingType, pipelineInputTypeNames, pipelineResultTypeName, segments, dependencies, terminalParameterName, maxConcurrency, maxConcurrencySource.PropertyName);
 
         return true;
     }
@@ -800,7 +873,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
         return sorted.ToImmutable();
     }
 
-    private static string GenerateSource(TypeDeclarationModel containingType, ImmutableArray<string> pipelineInputTypeNames, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName, bool hasActivitySource, int? maxConcurrency)
+    private static string GenerateSource(TypeDeclarationModel containingType, ImmutableArray<string> pipelineInputTypeNames, string pipelineResultTypeName, ImmutableArray<SegmentModel> segments, Dictionary<string, ImmutableArray<DependencyBinding>> dependencies, string terminalParameterName, bool hasActivitySource, int? maxConcurrencyConstant, string? maxConcurrencyPropertyName)
     {
         segments = SortByDependency(segments, dependencies);
 
@@ -850,9 +923,13 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             .AppendLine("    /// ]]>")
             .AppendLine("    /// </code>");
 
-        if (maxConcurrency is int concurrencyNote)
+        if (maxConcurrencyConstant is int concurrencyNote)
         {
             builder.AppendLine($"    /// <para>No more than {concurrencyNote} of this pipeline's segments run at once (<c>[MaxConcurrency({concurrencyNote})]</c>).</para>");
+        }
+        else if (maxConcurrencyPropertyName is string concurrencyPropertyNote)
+        {
+            builder.AppendLine($"    /// <para>No more of this pipeline's segments run at once than <c>{concurrencyPropertyNote}</c> allows, read once per call (<c>[MaxConcurrency]</c> on that property).</para>");
         }
 
         builder
@@ -873,9 +950,23 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             .AppendLine("        var linkedToken = cts.Token;")
             .AppendLine();
 
-        if (maxConcurrency is int concurrencyLimit)
+        var hasConcurrencyGate = maxConcurrencyConstant is not null || maxConcurrencyPropertyName is not null;
+
+        if (maxConcurrencyConstant is int concurrencyLimit)
         {
             builder.AppendLine($"        using var concurrencyGate = new global::System.Threading.SemaphoreSlim({concurrencyLimit});")
+                .AppendLine();
+        }
+        else if (maxConcurrencyPropertyName is string concurrencyProperty)
+        {
+            builder
+                .AppendLine($"        var maxConcurrency = {concurrencyProperty};")
+                .AppendLine( "        if (maxConcurrency <= 0)")
+                .AppendLine( "        {")
+                .AppendLine($"            throw new global::System.InvalidOperationException($\"'{concurrencyProperty}' must be 1 or greater to bound this pipeline's concurrency, but was {{maxConcurrency}}.\");")
+                .AppendLine( "        }")
+                .AppendLine()
+                .AppendLine( "        using var concurrencyGate = new global::System.Threading.SemaphoreSlim(maxConcurrency);")
                 .AppendLine();
         }
 
@@ -977,7 +1068,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
             var invocation = segment.IsStaticMethod ? $"{invocationTarget}({argList})" : $"{invocationTarget}.ExecuteAsync({argList})";
             var callExpression = segment.IsAsync ? $"await {invocation}.ConfigureAwait(false)" : invocation;
 
-            if (maxConcurrency is not null && hasActivitySource)
+            if (hasConcurrencyGate && hasActivitySource)
             {
                 builder
                     .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async()")
@@ -1015,7 +1106,7 @@ internal class PipelineSourceGenerator : IIncrementalGenerator
                     .AppendLine( "        }")
                     .AppendLine();
             }
-            else if (maxConcurrency is not null)
+            else if (hasConcurrencyGate)
             {
                 builder
                     .AppendLine($"        async global::System.Threading.Tasks.Task<{segment.ResultTypeName}> {ToPascalCase(segment.ParameterName)}Async()")

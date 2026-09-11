@@ -154,7 +154,74 @@ public class DiscoveryTests
 
         PipelineSourceGenerator.TryBuildGraph(members[0].ContainingType, members, static _ => { }, out var graph);
 
-        Assert.Equal(2, graph!.Value.MaxConcurrency);
+        Assert.Equal(2, graph!.Value.MaxConcurrencyConstant);
+        Assert.Null(graph!.Value.MaxConcurrencyPropertyName);
+    }
+
+    [Fact]
+    public void TryBuildGraph_ForPipelineWithMaxConcurrencyProperty_CarriesThePropertyNameThroughToTheModel()
+    {
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class ThrottledPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            {
+                [MaxConcurrency]
+                public int ConcurrencyLimit { get; set; } = 2;
+            }
+            """;
+
+        var compilation = CreateCompilation(source);
+        var candidateType = compilation.GetTypeByMetadataName("Sample.ThrottledPipeline")!;
+        var members = PipelineSourceGenerator.FindSegmentMembers(candidateType);
+
+        PipelineSourceGenerator.TryBuildGraph(members[0].ContainingType, members, static _ => { }, out var graph);
+
+        Assert.Equal("ConcurrencyLimit", graph!.Value.MaxConcurrencyPropertyName);
+        Assert.Null(graph!.Value.MaxConcurrencyConstant);
+    }
+
+    [Fact]
+    public void TryBuildGraph_ForConflictingMaxConcurrencySources_ReportsDiagnosticAndFails()
+    {
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            [MaxConcurrency(2)]
+            public partial class ConflictedPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            {
+                [MaxConcurrency]
+                public int ConcurrencyLimit { get; set; } = 2;
+            }
+            """;
+
+        var compilation = CreateCompilation(source);
+        var candidateType = compilation.GetTypeByMetadataName("Sample.ConflictedPipeline")!;
+        var members = PipelineSourceGenerator.FindSegmentMembers(candidateType);
+        var reported = new List<Microsoft.CodeAnalysis.Diagnostic>();
+        var built = PipelineSourceGenerator.TryBuildGraph(members[0].ContainingType, members, reported.Add, out var graph);
+
+        Assert.False(built);
+        Assert.Null(graph);
+        Assert.Contains(reported, d => d.Id == "DOVE025");
     }
 
     [Fact]
