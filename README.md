@@ -349,10 +349,29 @@ Without it, every eligible segment starts at once. With it, each segment's execu
 > [!TIP]
 > `[MaxConcurrency(1)]` can be used to force the pipeline to execute sequentially.
 
+If you need to control concurrency at runtime, `[MaxConcurrency]` can also be applied to a property. Dovetail will use this property when initializing `SemaphoreSlim`:
+
+```csharp
+public partial class MyPipeline(
+    [Segment] IPipelineSegment<Input, A> first,
+    [Segment] IPipelineSegment<Input, B> second,
+    [Segment] IPipelineSegment<A, B, Output> combine,
+    ConfigurationService config
+) : IPipeline<Input, Output>
+{
+    [MaxConcurrency]
+    public int ConcurrencyLimit => config.ConcurrencyLimit;
+}
+```
+
 > [!WARNING]
 > The limit is per-pipeline, not global: a nested pipeline used as a segment ([Pipelines-as-Segments](#-pipelines-as-segments)) fans out (and throttles, if it declares its own `[MaxConcurrency(n)]`) independently of its parent.
 >
 > `n` must be a positive integer (DOVE019). Omit the attribute to leave concurrency unbounded, which is the default.
+>
+> A pipeline takes its limit from one place or the other, never both, and never from two properties (DOVE025). The value goes on the pipeline, the bare attribute goes on a property (DOVE023), and that property must be a non-static `int` with a getter (DOVE024).
+>
+> When used on a property, if the value is <= 0, the generated code will throw `InvalidOperationException`.
 
 ### 🪈 Generics
 
@@ -752,6 +771,7 @@ public class PermissionsSegmentTests
 | Attribute | Target | Description |
 |---|---|---|
 | `[MaxConcurrency(n)]` | Classes deriving `IPipeline` | Limits the number of segments running concurrently. When `n = 1` the pipeline runs sequentially. Without the attribute (default) concurrency runs unbounded. |
+| `[MaxConcurrency]` | `int` properties of classes deriving `IPipeline` | Takes the same limit from the property's value instead. The property must be non-static and readable. |
 | `[Segment]` | Constructor arguments to classes deriving `IPipeline` | Flags the segment as being a part of the pipeline. Injected segments without `[Segment]` will not be used in the pipeline. |
 | `[Segment]` | Static methods in classes deriving `IPipeline` | Flags the method as being a segment of the pipeline. The method must not return `void`. |
 
@@ -781,3 +801,6 @@ public class PermissionsSegmentTests
 | DOVE020 | Segments producing the same type don't form a single valid chain (more than one may both consume and produce it, or three or more produce it at once); remove the extras, or restructure so only one segment transforms the type into itself. |
 | DOVE021 | A segment's ambiguous input (as in DOVE018) can't be resolved because the segment it might match has its own unresolved ambiguity; resolve that segment's diagnostic first. |
 | DOVE022 | `AddPipelines()` can't register a segment or pipeline that's `private` or `protected` (or nested inside a type that is): the generated registration code lives outside it, so it needs to be at least `internal`. |
+| DOVE023 | `[MaxConcurrency]` needs a value on a pipeline (`[MaxConcurrency(n)]`) and no value on a property, which supplies its own. |
+| DOVE024 | A property carrying `[MaxConcurrency]` must be a non-static `int` property with a getter. |
+| DOVE025 | A pipeline can take its concurrency limit from `[MaxConcurrency(n)]` on itself or from a single `[MaxConcurrency]` property, but not both and not several. |

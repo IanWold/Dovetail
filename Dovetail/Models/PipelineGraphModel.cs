@@ -10,5 +10,6 @@ internal readonly record struct PipelineGraphModel(
     ImmutableArray<SegmentModel> Segments,
     Dictionary<string, ImmutableArray<DependencyBinding>> Dependencies,
     string TerminalParameterName,
-    int? MaxConcurrency
+    int? MaxConcurrencyConstant,
+    string? MaxConcurrencyPropertyName
 );

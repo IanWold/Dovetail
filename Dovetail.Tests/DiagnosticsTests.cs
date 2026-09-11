@@ -299,4 +299,177 @@ public class DiagnosticsTests
 
         AssertSingleDiagnostic(source, "DOVE019");
     }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyOnAPipelineHasNoValue()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                [MaxConcurrency]
+                public partial class UnvaluedPipeline([Segment] FooSegment foo) : IPipeline<int, string>;
+                """
+            ),
+            "DOVE023"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyOnAPropertyHasAValue()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                public partial class ValuedPropertyPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    [MaxConcurrency(2)]
+                    public int ConcurrencyLimit { get; set; }
+                }
+                """
+            ),
+            "DOVE023"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyPropertyIsNotAnInt()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                public partial class StringLimitPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    [MaxConcurrency]
+                    public string ConcurrencyLimit { get; set; } = "2";
+                }
+                """
+            ),
+            "DOVE024"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyPropertyIsNullable()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                public partial class NullableLimitPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    [MaxConcurrency]
+                    public int? ConcurrencyLimit { get; set; }
+                }
+                """
+            ),
+            "DOVE024"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyPropertyIsStatic()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                public partial class StaticLimitPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    [MaxConcurrency]
+                    public static int ConcurrencyLimit { get; set; }
+                }
+                """
+            ),
+            "DOVE024"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyPropertyHasNoGetter()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                public partial class WriteOnlyLimitPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    private int concurrencyLimit;
+
+                    [MaxConcurrency]
+                    public int ConcurrencyLimit { set => concurrencyLimit = value; }
+                }
+                """
+            ),
+            "DOVE024"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenMaxConcurrencyIsOnAnIndexer()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                public partial class IndexerLimitPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    [MaxConcurrency]
+                    public int this[int index] => index;
+                }
+                """
+            ),
+            "DOVE024"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenBothThePipelineAndAPropertyDeclareMaxConcurrency()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                [MaxConcurrency(2)]
+                public partial class DoublyLimitedPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    [MaxConcurrency]
+                    public int ConcurrencyLimit { get; set; }
+                }
+                """
+            ),
+            "DOVE025"
+        );
+    }
+
+    [Fact]
+    public void ReportsDiagnostic_WhenTwoPropertiesDeclareMaxConcurrency()
+    {
+        AssertSingleDiagnostic(
+            MaxConcurrencySource(
+                """
+                public partial class TwiceLimitedPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+                {
+                    [MaxConcurrency]
+                    public int ConcurrencyLimit { get; set; }
+
+                    [MaxConcurrency]
+                    public int OtherLimit { get; set; }
+                }
+                """
+            ),
+            "DOVE025"
+        );
+    }
+
+    private static string MaxConcurrencySource(string pipelineDeclaration) =>
+        $$"""
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Dovetail;
+
+        namespace Sample;
+
+        public class FooSegment : IPipelineSegment<int, string>
+        {
+            public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+        }
+
+        {{pipelineDeclaration}}
+        """;
 }

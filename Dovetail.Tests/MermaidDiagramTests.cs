@@ -187,6 +187,64 @@ public class MermaidDiagramTests
     }
 
     [Fact]
+    public void EmitsMaxConcurrencyNote_WhenAttributeIsOnAProperty()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class GatedPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            {
+                [MaxConcurrency]
+                public int ConcurrencyLimit { get; set; } = 3;
+            }
+            """;
+
+        var text = GetGeneratedText(source);
+
+        Assert.Contains("No more of this pipeline's segments run at once than <c>ConcurrencyLimit</c> allows, read once per call (<c>[MaxConcurrency]</c> on that property).", text);
+    }
+
+    [Fact]
+    public void DocCommentIsWellFormedXml_ForAMaxConcurrencyProperty()
+    {
+        const string source = """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Dovetail;
+
+            namespace Sample;
+
+            public class FooSegment : IPipelineSegment<int, string>
+            {
+                public Task<string> ExecuteAsync(int value, CancellationToken ct) => Task.FromResult(value.ToString());
+            }
+
+            public partial class GatedPipeline([Segment] FooSegment foo) : IPipeline<int, string>
+            {
+                [MaxConcurrency]
+                public int ConcurrencyLimit { get; set; } = 3;
+            }
+            """;
+
+        var text = GetGeneratedText(source);
+        var xml = ExtractDocCommentXml(text);
+        var exception = Record.Exception(() => XElement.Parse(xml));
+        
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public void DoesNotEmitMaxConcurrencyNote_WhenAttributeAbsent()
     {
         const string source = """

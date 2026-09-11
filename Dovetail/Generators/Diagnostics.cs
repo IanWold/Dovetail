@@ -201,4 +201,31 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
+
+    internal static readonly DiagnosticDescriptor MaxConcurrencyArityMismatch = new(
+        id: "DOVE023",
+        title: "MaxConcurrency's argument doesn't match what it's applied to",
+        messageFormat: "'{0}' applies [MaxConcurrency] with the wrong number of arguments for what it's applied to; a pipeline needs a compile-time value, as [MaxConcurrency(n)], while a property supplies its own value at runtime, so it takes the parameterless [MaxConcurrency]",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    internal static readonly DiagnosticDescriptor InvalidMaxConcurrencyPropertyTarget = new(
+        id: "DOVE024",
+        title: "MaxConcurrency property must be a readable, non-static int",
+        messageFormat: "'{0}' applies [MaxConcurrency] to '{1}', but the pipeline's concurrency limit has to be read from a non-static int property with a getter; make '{1}' one, or move the attribute to a property that is",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    internal static readonly DiagnosticDescriptor ConflictingMaxConcurrencySources = new(
+        id: "DOVE025",
+        title: "A pipeline can declare at most one MaxConcurrency source",
+        messageFormat: "'{0}' declares its concurrency limit more than once ({1}); a pipeline may take the limit either from [MaxConcurrency(n)] on itself or from a single [MaxConcurrency] property, so remove all but one",
+        category: "Dovetail.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
 }
