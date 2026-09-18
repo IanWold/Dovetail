@@ -27,3 +27,8 @@ DOVE017 | Dovetail.SourceGenerator | Error | More than one segment implements th
 DOVE018 | Dovetail.SourceGenerator | Error | Segment dependency ambiguously matches a pipeline input and a segment's result
 DOVE019 | Dovetail.SourceGenerator | Error | MaxConcurrency must be a positive integer
 DOVE020 | Dovetail.SourceGenerator | Error | Segments producing the same type don't form a single valid chain
+DOVE021 | Dovetail.SourceGenerator | Error | Segment dependency ambiguity depends on another unresolved ambiguity
+DOVE022 | Dovetail.SourceGenerator | Error | Segment or pipeline isn't accessible for automatic DI registration
+DOVE023 | Dovetail.SourceGenerator | Error | MaxConcurrency's argument doesn't match what it's applied to
+DOVE024 | Dovetail.SourceGenerator | Error | MaxConcurrency property must be a readable, non-static int
+DOVE025 | Dovetail.SourceGenerator | Error | A pipeline can declare at most one MaxConcurrency source
