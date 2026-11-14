@@ -73,8 +73,6 @@ public class AccessibilityTests
     [Fact]
     public async Task InternalTopLevelPipelineAndSegment_RegisterAndResolveViaDI()
     {
-        _ = new ServiceCollection();
-
         const string source = """
             using System;
             using System.Threading;
@@ -110,8 +108,6 @@ public class AccessibilityTests
     [Fact]
     public async Task InternalNestedPipelineAndSegment_RegisterAndResolveViaDI()
     {
-        _ = new ServiceCollection();
-
         const string source = """
             using System;
             using System.Threading;
@@ -218,8 +214,6 @@ public class AccessibilityTests
     [Fact]
     public async Task SegmentNestedInsideItsOwnPipeline_WrappingAPlainService_RegistersAndResolvesViaDI()
     {
-        _ = new ServiceCollection();
-
         const string source = """
             using System;
             using System.Threading;
