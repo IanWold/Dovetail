@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
@@ -66,7 +67,35 @@ internal static class TestHelpers
 
         File.WriteAllText(Path.Combine(directory, "Class1.cs"), classSource);
 
-        return Path.Combine(directory, "Temp.csproj");
+        var projectPath = Path.Combine(directory, "Temp.csproj");
+
+        RestoreProject(projectPath);
+
+        return projectPath;
+    }
+
+    internal static void RestoreProject(string projectPath)
+    {
+        var startInfo = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
+        {
+            ArgumentList = { "restore", projectPath },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+
+        foreach (var variable in (string[])["MSBUILD_EXE_PATH", "MSBuildExtensionsPath", "MSBuildSDKsPath"])
+        {
+            startInfo.Environment.Remove(variable);
+        }
+
+        using var process = Process.Start(startInfo)!;
+
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, $"dotnet restore failed for {projectPath}:{Environment.NewLine}{stdout.Result}{stderr.Result}");
     }
 
     internal static string FindRepoRoot([CallerFilePath] string here = "")
