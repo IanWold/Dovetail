@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dovetail.Tests;
 
@@ -44,6 +46,8 @@ internal static class TestHelpers
             assemblyName: $"Dovetail.Tests.Generated.{Guid.NewGuid():N}",
             syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
             references: AppDomain.CurrentDomain.GetAssemblies()
+                .Concat([typeof(IServiceCollection).Assembly, typeof(ServiceCollection).Assembly, typeof(ActivitySource).Assembly])
+                .Distinct()
                 .Where(assembly =>
                     !assembly.IsDynamic
                     && !string.IsNullOrEmpty(assembly.Location)

@@ -55,6 +55,8 @@ public class ReportGeneratorTests
             </Project>
             """);
 
+        RestoreProject(projectPath);
+
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var exitCode = await ReportGenerator.RunAsync(["--project", projectPath, "--output", outputPath], stdout, stderr);

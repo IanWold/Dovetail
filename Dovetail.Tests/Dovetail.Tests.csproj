@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>Dovetail.Tests</RootNamespace>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <IsPackable>false</IsPackable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -18,9 +18,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="xunit.v3.mtp-v2" Version="4.0.2" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <PackageReference Include="xunit.v3.mtp-v2" Version="4.0.3" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.12.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0" />
   </ItemGroup>
 
   <ItemGroup>
